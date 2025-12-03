@@ -274,28 +274,60 @@
             </div>
         </div>
     </div>
+    
+    <div id="editEngineerModal" class="modal-overlay">
+        <div class="modal-content max-w-lg" role="dialog" aria-modal="true">
+            <button onclick="closeModal('editEngineerModal')" class="close-btn">&times;</button>
+            <h3 class="text-2xl font-bold text-red-700 border-b pb-3 mb-4">مدیریت مهندس</h3>
 
+            <form id="editEngineerForm" class="space-y-4">
+                <input type="hidden" id="editEngineerId">
 
+                <div>
+                    <label for="editEngineerName" class="block text-sm font-medium text-gray-700 mb-1">نام و نام خانوادگی:</label>
+                    <input type="text" id="editEngineerName" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                
+                <div>
+                    <label for="editEngineerRank" class="block text-sm font-medium text-gray-700 mb-1">پايه مهندسي:</label>
+                    <select id="editEngineerRank" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <option value="پايه سه">پايه سه</option>
+                        <option value="پايه دو">پايه دو</option>
+                        <option value="پايه يک">پايه يک</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-between items-center pt-4 border-t">
+                    <button type="button" onclick="confirmDeleteEngineer()" class="bg-red-600 text-white p-3 rounded-lg font-bold hover:bg-red-700 transition duration-150 shadow-md flex items-center">
+                        حذف مهندس 🗑️
+                    </button>
+                    <button type="submit" class="bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition duration-150 shadow-md">
+                        ذخیره تغییرات ✅
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, doc, updateDoc, onSnapshot, runTransaction, query, where, getDocs, increment, writeBatch, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, onSnapshot, runTransaction, query, where, getDocs, increment, writeBatch, limit, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // 🔑 لیست UID ادمین‌های مجاز
         const ADMIN_UIDS = [
-            "rl8GBO00j7hZy4iwDnxaSRcKteL2", // UID ادمین اصلی
-            // "YOUR_SECOND_ADMIN_UID"       // UID دوم را اینجا به صورت متنی اضافه کنید
+            "rl8GBO00j7hZy4iwDnxaSRcKteL2", // UID ادمین اصلی (اینجا را با UID ادمین اصلی خود جایگزین کنید)
+            // "YOUR_SECOND_ADMIN_UID"       // UID دوم را اینجا به صورت متنی اضافه کنید
         ];
 
         // CONFIG OBJECT (تنظيمات فايربيس شما)
         const firebaseConfig = { 
-            apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
-            authDomain: "database-erjakar.firebaseapp.com",
-            projectId: "database-erjakar",
-            storageBucket: "database-erjakar.firebasestorage.app",
-            messagingSenderId: "1056379437698",
-            appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b",
-            measurementId: "G-NS5ZPEFXD8"
+            apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ", // این خط را با مقدار واقعی جایگزین کنید
+            authDomain: "database-erjakar.firebaseapp.com", // این خط را با مقدار واقعی جایگزین کنید
+            projectId: "database-erjakar", // این خط را با مقدار واقعی جایگزین کنید
+            storageBucket: "database-erjakar.firebasestorage.app", // این خط را با مقدار واقعی جایگزین کنید
+            messagingSenderId: "1056379437698", // این خط را با مقدار واقعی جایگزین کنید
+            appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b", // این خط را با مقدار واقعی جایگزین کنید
+            measurementId: "G-NS5ZPEFXD8" // این خط را با مقدار واقعی جایگزین کنید
         };
         
         // تنظيمات سراسري فايربيس
@@ -439,6 +471,7 @@
             closeModal('detailsModal');
             closeModal('confirmationModal');
             closeModal('reportModal'); // اطمینان از بسته شدن مدال‌ها
+            closeModal('editEngineerModal');
         }
         
         window.closeModal = function(modalId) { // Exported to window
@@ -449,7 +482,7 @@
         }
         
         window.openModal = function(modalId) { // Exported to window
-              const modal = document.getElementById(modalId);
+             const modal = document.getElementById(modalId);
             if (modal) {
                 // اطمینان از بسته شدن تمام مدال‌های دیگر قبل از باز کردن
                 document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
@@ -469,7 +502,7 @@
                  finalCost = baseCost + (area * 0.01);
             }
             
-            // گرد کردن به یک رقم اعشار (بسته به سیاست سازمان، این می‌تواند تغییر کند)
+            // گرد کردن به یک رقم اعشار 
             return Math.ceil(finalCost * 10) / 10;
         }
 
@@ -678,398 +711,532 @@
             const listEl = document.getElementById('engineerList');
             document.getElementById('loadingMessage').classList.add('hidden');
             
-            if (engineers.length === 0) {
-                 listEl.innerHTML = '<p class="text-center text-gray-500 p-8">هنوز مهندسي ثبت نشده است.</p>';
-                 return;
+            // !!! اصلاح خطای قبلی: مقایسه با ===
+            if (engineers.length === 0) { 
+                listEl.innerHTML = '<p class="text-center text-gray-500 p-8">هيچ مهندسي تاکنون ثبت نشده است.</p>';
+                return;
             }
 
-            // Sort by rank priority (highest first) and then by remaining quota (highest first)
-            const sortedEngineers = engineers.sort((a, b) => {
-                const rankA = RANK_PRIORITY[a.rank] || 0;
-                const rankB = RANK_PRIORITY[b.rank] || 0;
-                if (rankB !== rankA) {
-                    return rankB - rankA;
-                }
-                const remainingA = a.maxQuota - a.usedQuota;
-                const remainingB = b.maxQuota - b.usedQuota;
-                return remainingB - remainingA;
-            });
-            
+            // مرتب‌سازي بر اساس سهميه استفاده شده (کمترين به بيشترين)
+            engineers.sort((a, b) => a.usedQuota - b.usedQuota);
+
             let html = '';
-            
-            sortedEngineers.forEach(eng => {
-                const quota = eng.maxQuota || 0;
-                const debt = eng.usedQuota || 0;
-                const remaining = quota - debt;
-                // در صورتی که سهمیه منفی شود، درصد را بالاتر از ۱۰۰ حساب می‌کنیم
-                const percentageUsed = quota > 0 ? (debt / quota) * 100 : (debt > 0 ? 100 : 0);
-                
-                let progressBarColor = 'bg-green-500';
-                if (percentageUsed >= 100) {
-                    progressBarColor = 'bg-red-600';
-                } else if (percentageUsed >= 80) {
-                    progressBarColor = 'bg-yellow-500';
+            engineers.forEach(eng => {
+                const totalQuota = eng.quota;
+                const usedQuota = eng.usedQuota;
+                const remainingQuota = totalQuota - usedQuota;
+                const progressPercent = totalQuota > 0 ? ((usedQuota / totalQuota) * 100).toFixed(1) : 0;
+
+                let progressColorClass = 'bg-blue-500';
+                let borderColorClass = 'border-blue-500';
+
+                if (remainingQuota < 0) {
+                    // بدهکار (قرمز)
+                    progressColorClass = 'bg-red-600';
+                    borderColorClass = 'border-red-600';
+                } else if (progressPercent >= 80) {
+                    // پرخطر (زرد)
+                    progressColorClass = 'bg-yellow-500';
+                    borderColorClass = 'border-yellow-500';
                 }
 
                 html += `
-                    <div class="p-4 bg-white rounded-lg card flex items-center justify-between transition hover:shadow-lg border-r-4 border-blue-500">
-                        <div class="flex-1 min-w-0">
-                            <h3 class="text-xl font-bold text-gray-800">${eng.fullName}</h3>
-                            <p class="text-sm text-gray-600">پايه: ${eng.rank}</p>
-                            <button onclick="showEngineerDetails('${eng.id}', '${eng.fullName}')" class="text-blue-600 text-xs mt-1 hover:underline">مشاهده جزئيات کارها</button>
-                        </div>
-                        
-                        <div class="w-1/3 mx-4">
-                            <div class="h-2 bg-gray-200 rounded-full">
-                                <div class="progress-bar-fill h-2 rounded-full ${progressBarColor}" style="width: ${Math.min(100, percentageUsed)}%;"></div>
+                    <div class="p-4 border-r-4 ${borderColorClass} bg-white card flex justify-between items-center transition duration-200 hover:shadow-lg">
+                        <div class="flex-grow">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-xl font-bold text-gray-900">${eng.name} (${eng.rank})</h3>
+                                
+                                ${isCurrentUserAdmin() ? `
+                                    <button onclick="openEditEngineerModal('${eng.id}')" class="text-blue-500 hover:text-blue-700 ml-4 p-2 rounded-full hover:bg-gray-100 print:hidden" title="مدیریت مهندس">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                    </button>
+                                ` : ''}
+                            </div>
+                            
+                            <p class="text-sm text-gray-500 mt-1">سهمیه کل: ${formatCost(totalQuota)}</p>
+                            <p class="text-sm text-gray-500">سهمیه استفاده شده: <span class="font-semibold text-blue-600">${formatCost(usedQuota)}</span></p>
+
+                            <div class="mt-3">
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="progress-bar-fill h-2.5 rounded-full ${progressColorClass}" style="width: ${Math.min(100, progressPercent)}%"></div>
+                                </div>
+                                <div class="text-right text-xs mt-1 text-gray-500">
+                                    ${remainingQuota < 0 ? 
+                                        `<span class="text-red-600 font-bold">بدهی مازاد: ${formatCost(-remainingQuota)}</span>` : 
+                                        `${progressPercent}% استفاده شده`
+                                    }
+                                </div>
                             </div>
                         </div>
-
-                        <div class="text-right flex-shrink-0">
-                            <p class="text-lg font-semibold text-gray-800">سهميه کل: ${formatCost(quota)}</p>
-                            <p class="text-sm ${debt > quota ? 'text-red-700' : 'text-red-500'}">مصرف شده: ${formatCost(debt)}</p>
-                            <p class="text-base font-bold ${remaining <= 0 ? 'text-red-700' : 'text-green-700'}">باقيمانده: ${formatCost(remaining)}</p>
-                        </div>
+                        
+                        <button onclick="showEngineerProjects('${eng.id}', '${eng.name}')" 
+                                class="bg-gray-200 text-gray-700 p-2 px-4 rounded-lg hover:bg-gray-300 transition duration-150 ml-4 font-semibold text-sm flex-shrink-0 print:hidden">
+                            مشاهده کارها
+                        </button>
                     </div>
                 `;
             });
-            
+
             listEl.innerHTML = html;
         }
 
 
         // ====================================================================
-        // === FIREBASE TRANSACTIONS & DATA WRITES ===
+        // === ENGINEER MANAGEMENT FUNCTIONS (CRUD) ===
         // ====================================================================
 
         document.getElementById('addEngineerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!isCurrentUserAdmin()) {
-                showMessage('شما دسترسي ادمين براي ثبت مهندس جديد را نداريد.', 'error');
-                return;
-            }
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را نداريد.', 'error');
 
-            const fullName = document.getElementById('engineerName').value;
+            const name = document.getElementById('engineerName').value.trim();
             const rank = document.getElementById('engineerRank').value;
 
-            try {
-                const maxQuota = RANK_QUOTAS[rank] || 0;
+            if (!name || !rank) return showMessage('لطفاً نام و پايه را وارد کنيد.', 'error');
 
+            try {
+                const quota = RANK_QUOTAS[rank];
                 await addDoc(ENGINEER_COLLECTION, {
-                    fullName: fullName,
-                    rank: rank,
-                    maxQuota: maxQuota, // سهمیه اولیه بر اساس پایه
-                    usedQuota: 0, 
-                    createdAt: serverTimestamp(),
-                    userId: userId 
+                    name,
+                    rank,
+                    quota: quota,
+                    usedQuota: 0,
+                    ownerId: userId,
+                    createdAt: serverTimestamp()
                 });
 
-                showMessage(`مهندس ${fullName} با موفقيت ثبت و سهميه ${maxQuota} م.ت به ايشان اختصاص داده شد.`, 'success');
+                showMessage(`مهندس ${name} با موفقيت ثبت شد. سهميه: ${formatCost(quota)}`, 'success');
                 document.getElementById('addEngineerForm').reset();
                 showView('dashboardView');
             } catch (error) {
-                console.error("خطا در ثبت مهندس: ", error);
-                showMessage("خطا در ثبت مهندس: " + error.message, 'error');
+                console.error("خطا در ثبت مهندس:", error);
+                showMessage('خطا در ثبت مهندس: ' + error.message, 'error');
             }
         });
 
+        window.openEditEngineerModal = function(engineerId) {
+            if (!isCurrentUserAdmin()) {
+                showMessage('شما دسترسي ادمين براي انجام اين عمليات را نداريد.', 'error');
+                return;
+            }
 
-        window.showEngineerDetails = async function(engineerId, engineerName) {
-            modalTitleRef.textContent = `جزئيات کارهاي ${engineerName}`;
-            projectsListRef.innerHTML = '';
-            modalLoadingMessageRef.classList.remove('hidden');
-            openModal('detailsModal');
+            const engineer = allEngineersMap[engineerId];
+            if (!engineer) {
+                showMessage('مهندس مورد نظر يافت نشد.', 'error');
+                return;
+            }
+
+            // پر کردن فیلدهای مدال
+            document.getElementById('editEngineerId').value = engineerId;
+            document.getElementById('editEngineerName').value = engineer.name;
+            document.getElementById('editEngineerRank').value = engineer.rank;
+
+            openModal('editEngineerModal');
+        }
+
+        document.getElementById('editEngineerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را نداريد.', 'error');
+
+            const engineerId = document.getElementById('editEngineerId').value;
+            const newName = document.getElementById('editEngineerName').value.trim();
+            const newRank = document.getElementById('editEngineerRank').value;
+
+            if (!engineerId || !newName || !newRank) {
+                return showMessage('لطفاً همه فيلدها را پر کنيد.', 'error');
+            }
+
+            closeModal('editEngineerModal');
+            showMessage('در حال ذخيره تغييرات...', 'info');
 
             try {
-                const q = query(PROJECTS_COLLECTION, where("engineerId", "==", engineerId), limit(50));
-                const querySnapshot = await getDocs(q);
+                const engineerRef = doc(db, 'engineers', engineerId);
                 
-                modalLoadingMessageRef.classList.add('hidden');
-                
-                if (querySnapshot.empty) {
-                    projectsListRef.innerHTML = '<p class="text-center text-gray-500 p-4">تاکنون کاري به اين مهندس ارجاع نشده است.</p>';
-                    return;
+                // اگر رنک تغییر کرده باشد، سهمیه پایه نیز باید به‌روز شود
+                const currentQuota = allEngineersMap[engineerId].quota;
+                const newBaseQuota = RANK_QUOTAS[newRank];
+                let updateData = { name: newName, rank: newRank };
+
+                if (currentQuota !== newBaseQuota) {
+                     updateData.quota = newBaseQuota;
                 }
 
-                let html = `
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">تاريخ</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">نوع کار</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">متقاضي</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">ارگان</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">هزينه (م.ت)</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                `;
-                
-                querySnapshot.docs
-                    .map(doc => ({ id: doc.id, ...doc.data() }))
-                    .sort((a, b) => (b.assignmentDate.toDate() - a.assignmentDate.toDate())) // مرتب‌سازی از جدید به قدیم
-                    .forEach(project => {
-                        const dateStr = project.assignmentDate ? project.assignmentDate.toDate().toLocaleDateString('fa-IR') : 'نامعلوم';
-                        
-                        html += `
-                            <tr>
-                                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${dateStr}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${project.jobType}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${project.clientName}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${project.relatedOrganization || 'نامشخص'}</td>
-                                <td class="px-3 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">${formatCost(project.cost)}</td>
-                            </tr>
-                        `;
-                    });
-
-                html += `</tbody></table></div>`;
-                projectsListRef.innerHTML = html;
+                await updateDoc(engineerRef, updateData);
+                showMessage('اطلاعات مهندس با موفقيت به‌روزرساني شد.', 'success');
 
             } catch (error) {
-                console.error("خطا در بارگذاري جزئيات کار: ", error);
-                modalLoadingMessageRef.classList.add('hidden');
-                projectsListRef.innerHTML = '<p class="text-center text-red-500 p-4">خطا در بارگذاري اطلاعات!</p>';
+                console.error("خطا در به‌روزرساني مهندس:", error);
+                showMessage('خطا در به‌روزرساني اطلاعات: ' + error.message, 'error');
+            }
+        });
+
+        window.confirmDeleteEngineer = function() {
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را نداريد.', 'error');
+
+            const engineerId = document.getElementById('editEngineerId').value;
+            const engineerName = document.getElementById('editEngineerName').value;
+
+            if (!engineerId) return;
+
+            // بستن مدال ویرایش و باز کردن مدال تأیید
+            closeModal('editEngineerModal');
+            openModal('confirmationModal');
+            
+            document.getElementById('confirmModalTitle').textContent = `حذف مهندس ${engineerName}`;
+            document.getElementById('confirmModalMessage').innerHTML = `
+                <p class="text-lg font-semibold text-red-600">آيا مطمئن هستيد؟</p>
+                <p>با حذف **${engineerName}**، تمام پروژه‌های ارجاع شده به ایشان نيز حذف خواهند شد.</p>
+                <p class="text-sm text-gray-500 mt-2">اين عمليات قابل بازگشت نيست.</p>
+            `;
+            
+            // تنظیم اکشن دکمه تایید
+            const confirmBtn = document.getElementById('confirmAcceptBtn');
+            confirmBtn.onclick = () => deleteEngineerFinal(engineerId);
+            confirmBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            confirmBtn.classList.add('bg-red-800', 'hover:bg-red-900');
+        }
+
+        async function deleteEngineerFinal(engineerId) {
+            closeModal('confirmationModal');
+            showMessage('در حال حذف مهندس و پروژه‌های مربوطه...', 'info');
+
+            if (!isCurrentUserAdmin()) {
+                showMessage('شما اجازه انجام اين کار را نداريد.', 'error');
+                return;
+            }
+
+            try {
+                const batch = writeBatch(db);
+                const engineerRef = doc(db, 'engineers', engineerId);
+                
+                // 1. حذف پروژه‌های ارجاع شده به این مهندس
+                const projectsToDeleteQuery = query(PROJECTS_COLLECTION, where("engineerId", "==", engineerId));
+                const projectsSnapshot = await getDocs(projectsToDeleteQuery);
+                
+                projectsSnapshot.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // 2. حذف سند مهندس
+                batch.delete(engineerRef);
+
+                await batch.commit();
+
+                showMessage('مهندس و تمام پروژه‌های ايشان با موفقيت حذف شدند. 🗑️', 'success');
+            } catch (error) {
+                console.error("خطا در حذف مهندس:", error);
+                showMessage('خطا در حذف: ' + error.message, 'error');
             }
         }
 
+        // ====================================================================
+        // === PROJECT ASSIGNMENT & LOGIC ===
+        // ====================================================================
+
+        function findBestEngineer(projectCost) {
+            const availableEngineers = Object.values(allEngineersMap).filter(eng => {
+                // مهندسی که سهمیه کافی دارد (حتی اگر بدهکار باشد، تا زمانی که به صفر نرسانده، می‌تواند کار بگیرد)
+                // منطق: مهندس باید بتواند کار را انجام دهد، یعنی سهمیه‌اش با کسر این کار، کمتر از یک آستانه بحرانی (مثلا 0) نشود.
+                return eng.quota - eng.usedQuota >= 0 || eng.usedQuota === 0;
+            });
+
+            if (availableEngineers.length === 0) {
+                return null;
+            }
+
+            // مرتب‌سازی بر اساس الویت:
+            // 1. کمترين سهميه استفاده شده (Low Used Quota)
+            // 2. بالاترين پايه (Highest Rank Priority)
+            availableEngineers.sort((a, b) => {
+                if (a.usedQuota !== b.usedQuota) {
+                    return a.usedQuota - b.usedQuota; // صعودی (کمترين استفاده شده)
+                }
+                return RANK_PRIORITY[b.rank] - RANK_PRIORITY[a.rank]; // نزولی (بالاترين پايه)
+            });
+
+            return availableEngineers[0];
+        }
 
         document.getElementById('assignProjectForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!isCurrentUserAdmin()) {
-                showMessage('شما دسترسي ادمين براي ارجاع کار را نداريد.', 'error');
-                return;
-            }
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را نداريد.', 'error');
 
             const jobType = document.getElementById('jobType').value;
-            const clientName = document.getElementById('clientName').value;
-            const area = document.getElementById('projectArea') ? parseFloat(document.getElementById('projectArea').value) : 0;
-            const cost = parseFloat(document.getElementById('manualCost').value);
-            const relatedOrganization = document.getElementById('relatedOrganization') ? document.getElementById('relatedOrganization').value : JOB_DETAILS[jobType].organization;
+            const manualCostEl = document.getElementById('manualCost');
+            const projectAreaEl = document.getElementById('projectArea');
+            const clientName = document.getElementById('clientName').value.trim();
+            const relatedOrganizationEl = document.getElementById('relatedOrganization');
 
+            const projectCost = manualCostEl ? parseFloat(manualCostEl.value) : 0;
+            const projectArea = projectAreaEl ? parseFloat(projectAreaEl.value) : null;
+            let organization = JOB_DETAILS[jobType].organization;
 
-            // 1. يافتن مهندس واجد شرايط (با بيشترين سهميه باقيمانده)
-            const availableEngineers = Object.values(allEngineersMap)
-                .filter(eng => (eng.maxQuota - eng.usedQuota) >= cost);
-
-            if (availableEngineers.length === 0) {
-                showMessage('هيچ مهندسي با سهميه کافي براي اين پروژه يافت نشد. لطفاً سهميه‌ها را باز کنيد.', 'error');
-                return;
+            if (relatedOrganizationEl) {
+                organization = relatedOrganizationEl.value;
             }
 
-            // مرتب‌سازي: ابتدا پايه بالاتر، سپس بيشترين سهميه باقيمانده
-            const sortedAvailableEngineers = availableEngineers.sort((a, b) => {
-                const rankA = RANK_PRIORITY[a.rank] || 0;
-                const rankB = RANK_PRIORITY[b.rank] || 0;
-                if (rankB !== rankA) {
-                    return rankB - rankA;
-                }
-                const remainingA = a.maxQuota - a.usedQuota;
-                const remainingB = b.maxQuota - b.usedQuota;
-                return remainingB - remainingA; 
-            });
+            if (isNaN(projectCost) || projectCost <= 0) {
+                return showMessage('لطفاً هزينه پروژه را به درستي وارد کنيد.', 'error');
+            }
 
-            const assignedEngineer = sortedAvailableEngineers[0];
-            const engineerRef = doc(db, 'engineers', assignedEngineer.id);
+            const bestEngineer = findBestEngineer(projectCost);
             const assignmentResultEl = document.getElementById('assignmentResult');
             const resultTextEl = document.getElementById('resultText');
 
-            try {
-                // 2. شروع تراکنش
-                await runTransaction(db, async (transaction) => {
-                    const engineerDoc = await transaction.get(engineerRef);
-
-                    if (!engineerDoc.exists()) {
-                        throw "مهندس مورد نظر يافت نشد!";
-                    }
-
-                    const currentUsedQuota = engineerDoc.data().usedQuota || 0;
-                    const newUsedQuota = currentUsedQuota + cost;
-                    
-                    // بررسی مجدد سهمیه داخل تراکنش
-                    if (newUsedQuota > engineerDoc.data().maxQuota) {
-                        throw "سهميه مهندس در حين انجام تراکنش، توسط سيستم ديگري مصرف شد. ارجاع ناموفق.";
-                    }
-
-                    // 3. افزودن پروژه
-                    const projectData = {
-                        engineerId: assignedEngineer.id,
-                        jobType: jobType,
-                        clientName: clientName,
-                        cost: cost,
-                        projectArea: area,
-                        relatedOrganization: relatedOrganization,
-                        assignmentDate: serverTimestamp(),
-                        userId: userId 
-                    };
-                    await addDoc(PROJECTS_COLLECTION, projectData);
-
-                    // 4. به روز رساني سهميه مهندس
-                    transaction.update(engineerRef, {
-                        usedQuota: newUsedQuota
-                    });
-                });
-                
-                // تراکنش موفق بود
-                assignmentResultEl.classList.remove('hidden');
-                assignmentResultEl.classList.remove('border-red-500');
-                assignmentResultEl.classList.add('border-green-500');
-                resultTextEl.classList.remove('text-red-700');
-                resultTextEl.classList.add('text-green-700');
-                resultTextEl.innerHTML = `
-                    کار با موفقيت به مهندس **${assignedEngineer.fullName}** (پايه ${assignedEngineer.rank}) ارجاع شد. <br>
-                    باقيمانده سهميه ايشان: **${formatCost(assignedEngineer.maxQuota - (assignedEngineer.usedQuota + cost))}**
-                `;
-                document.getElementById('assignProjectForm').reset();
-                renderDynamicInputs(''); // ريست کردن ورودي‌هاي دايناميک
-                showMessage('ارجاع کار با موفقيت انجام شد.', 'success');
-
-
-            } catch (error) {
-                console.error("خطا در تراکنش ارجاع کار: ", error);
+            if (!bestEngineer) {
                 assignmentResultEl.classList.remove('hidden');
                 assignmentResultEl.classList.remove('border-green-500');
-                assignmentResultEl.classList.add('border-red-500');
-                resultTextEl.classList.remove('text-green-700');
-                resultTextEl.classList.add('text-red-700');
-                resultTextEl.textContent = `خطا در ارجاع کار. دليل: ${error.message || error}`;
-                showMessage('خطا در ارجاع کار: ' + (error.message || error), 'error');
+                assignmentResultEl.classList.add('border-red-600');
+                resultTextEl.innerHTML = `<span class="text-red-700 font-bold">❌ خطا در ارجاع:</span> هيچ مهندسي سهميه کافي (يا سهميه صفر) براي دريافت اين پروژه ندارد.`;
+                showMessage('ارجاع کار ناموفق: سهميه مهندسين تمام شده است.', 'error');
+                return;
+            }
+
+            assignmentResultEl.classList.remove('hidden');
+            assignmentResultEl.classList.remove('border-red-600');
+            assignmentResultEl.classList.add('border-green-500');
+            resultTextEl.innerHTML = `
+                <span class="text-green-700 font-bold">✅ ارجاع موفق:</span> پروژه به **${bestEngineer.name}** (پايه ${bestEngineer.rank}) ارجاع شد.
+                <br>هزينه پروژه: ${formatCost(projectCost)}
+                <br>سهميه باقيمانده وي: ${formatCost(bestEngineer.quota - bestEngineer.usedQuota - projectCost)}
+            `;
+            
+            showMessage('در حال ثبت پروژه و به‌روزرساني سهميه...', 'info');
+
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const engineerRef = doc(db, 'engineers', bestEngineer.id);
+                    
+                    // 1. به‌روزرساني سهميه مهندس
+                    transaction.update(engineerRef, {
+                        usedQuota: increment(projectCost)
+                    });
+
+                    // 2. ثبت پروژه جديد
+                    await addDoc(PROJECTS_COLLECTION, {
+                        engineerId: bestEngineer.id,
+                        engineerName: bestEngineer.name,
+                        jobType: jobType,
+                        cost: projectCost,
+                        clientName: clientName,
+                        area: projectArea,
+                        organization: organization,
+                        ownerId: userId,
+                        createdAt: serverTimestamp()
+                    });
+                });
+
+                showMessage('ارجاع کار و ثبت سهميه با موفقيت انجام شد.', 'success');
+                document.getElementById('assignProjectForm').reset();
+                renderDynamicInputs(null);
+
+            } catch (error) {
+                console.error("خطا در تراکنش ارجاع کار:", error);
+                showMessage('خطا در ثبت تراکنش: ' + error.message, 'error');
             }
         });
 
 
-        window.confirmResetAllQuotas = function() {
-            if (!isCurrentUserAdmin()) {
-                showMessage('شما دسترسي ادمين را نداريد.', 'error');
-                return;
+        // ====================================================================
+        // === DETAILS MODAL (مشاهده کارهای مهندس) ===
+        // ====================================================================
+
+        window.showEngineerProjects = async function(engineerId, engineerName) {
+            openModal('detailsModal');
+            modalTitleRef.textContent = `ليست کارهاي ${engineerName}`;
+            projectsListRef.innerHTML = '';
+            modalLoadingMessageRef.classList.remove('hidden');
+            
+            if (!isAuthReady) {
+                 return showMessage('لطفاً صبر کنيد تا اتصال به پايگاه داده برقرار شود.', 'info');
             }
 
-            const modal = document.getElementById('confirmationModal');
-            document.getElementById('confirmModalTitle').textContent = '⚠️ باز کردن سهميه‌ها';
-            document.getElementById('confirmModalMessage').innerHTML = 'آيا مطمئن هستيد که مي‌خواهيد سهميه **همه مهندسان** را مجدداً باز کنيد؟ اين کار بدهي (Used Quota) همه را صفر و سهميه (Max Quota) را بر اساس پايه ريست خواهد کرد.';
+            const engineerProjects = allProjects.filter(p => p.engineerId === engineerId);
+
+            if (engineerProjects.length === 0) {
+                modalLoadingMessageRef.classList.add('hidden');
+                projectsListRef.innerHTML = '<p class="text-center text-gray-500 p-8">هيچ کاري براي اين مهندس ثبت نشده است.</p>';
+                return;
+            }
             
-            const acceptBtn = document.getElementById('confirmAcceptBtn');
-            acceptBtn.textContent = 'بله، سهميه را ريست کن';
-            acceptBtn.onclick = resetAllQuotas;
+            // مرتب‌سازي بر اساس تاريخ (جديدترين به قديمي‌ترين)
+            engineerProjects.sort((a, b) => {
+                const dateA = a.createdAt ? (a.createdAt.seconds || 0) : 0;
+                const dateB = b.createdAt ? (b.createdAt.seconds || 0) : 0;
+                return dateB - dateA;
+            });
+
+
+            let listHtml = '';
+            engineerProjects.forEach((p, index) => {
+                const date = p.createdAt ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('fa-IR') : 'نامشخص';
+
+                listHtml += `
+                    <div class="p-3 border rounded-lg bg-gray-50 hover:bg-gray-100 transition duration-150">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-lg text-blue-800">${p.jobType}</span>
+                            <span class="text-sm text-gray-600">${date}</span>
+                        </div>
+                        <p class="text-sm mt-1">
+                            <span class="font-semibold text-green-700">${formatCost(p.cost)}</span> |
+                            متقاضي: ${p.clientName}
+                        </p>
+                        ${p.organization ? `<p class="text-xs text-gray-500">ارجاع به: ${p.organization}</p>` : ''}
+                    </div>
+                `;
+            });
+            
+            modalLoadingMessageRef.classList.add('hidden');
+            projectsListRef.innerHTML = listHtml;
+        }
+
+
+        // ====================================================================
+        // === QUOTA RESET (باز کردن سهميه جديد) ===
+        // ====================================================================
+
+        window.confirmResetAllQuotas = function() {
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را ندارید.', 'error');
+            
             openModal('confirmationModal');
+            document.getElementById('confirmModalTitle').textContent = 'تأیید تسویه حساب و باز کردن سهمیه جدید';
+            document.getElementById('confirmModalMessage').innerHTML = `
+                <p class="text-lg font-semibold text-red-600">هشدار: اين عمليات تمام بدهی‌های مهندسان را صفر می‌کند.</p>
+                <p>آيا مطمئن هستيد که می‌خواهید **usedQuota** همه مهندسان را به صفر برگردانید و سهمیه جدید ماه را آغاز کنید؟</p>
+            `;
+            
+            const confirmBtn = document.getElementById('confirmAcceptBtn');
+            confirmBtn.onclick = resetAllQuotas;
+            confirmBtn.classList.remove('bg-red-800', 'hover:bg-red-900');
+            confirmBtn.classList.add('bg-red-600', 'hover:bg-red-700');
         }
 
         async function resetAllQuotas() {
             closeModal('confirmationModal');
-            showMessage('در حال باز کردن سهميه‌ها...', 'info');
-
-            if (!isCurrentUserAdmin()) return;
+            showMessage('در حال تسویه حساب و بازنشانی سهمیه‌ها...', 'info');
+            
+            if (!isCurrentUserAdmin()) return showMessage('شما اجازه انجام اين کار را ندارید.', 'error');
 
             try {
                 const batch = writeBatch(db);
+                
+                const engineersSnapshot = await getDocs(ENGINEER_COLLECTION);
                 let count = 0;
-
-                for (const id in allEngineersMap) {
-                    const eng = allEngineersMap[id];
-                    const engineerRef = doc(db, 'engineers', id);
-                    const newMaxQuota = RANK_QUOTAS[eng.rank] || 0;
-                    
-                    batch.update(engineerRef, {
-                        usedQuota: 0,
-                        maxQuota: newMaxQuota 
-                    });
+                
+                engineersSnapshot.forEach((doc) => {
+                    const engineerRef = doc.ref;
+                    batch.update(engineerRef, { usedQuota: 0 });
                     count++;
-                }
+                });
 
                 await batch.commit();
-                showMessage(`سهميه ${count} مهندس با موفقيت باز شد.`, 'success');
+                showMessage(`${count} سهميه مهندس با موفقيت بازنشاني و تسويه حساب شد.`, 'success');
 
             } catch (error) {
-                console.error("خطا در باز کردن سهميه‌ها: ", error);
-                showMessage("خطا در ريست سهميه‌ها: " + error.message, 'error');
+                console.error("خطا در بازنشاني سهميه:", error);
+                showMessage('خطا در بازنشاني سهميه: ' + error.message, 'error');
             }
         }
-        
+
+
         // ====================================================================
-        // === REPORTING FUNCTIONS (توابع گزارش‌گيري - اصلاح شده) ===
+        // === MONTHLY REPORT LOGIC (گزارش ماهانه) ===
         // ====================================================================
 
-        window.showMonthlyReport = function() { 
-            // 1. باز کردن مدال گزارش
-            openModal('reportModal');
-            document.getElementById('reportLoadingMessage').classList.add('hidden'); 
-            
-            const now = new Date();
-            const currentYear = now.getFullYear();
-            const currentMonth = now.getMonth();
-            const currentMonthName = new Date(currentYear, currentMonth, 1).toLocaleDateString('fa-IR', { month: 'long', year: 'numeric' });
-
-            document.getElementById('reportModalTitle').textContent = `📊 گزارش عملکرد سهمیه در ${currentMonthName}`;
-
-            let totalCost = 0;
-            let totalProjects = 0;
-            const monthlyProjectsListEl = document.getElementById('monthlyProjectsList');
-            let projectsHtml = '';
-
-            // 2. فیلترینگ پروژه‌های ماه جاری
-            const currentMonthProjects = allProjects.filter(project => {
-                // تبدیل Timestamp فایربیس به شیء Date برای مقایسه
-                const date = project.assignmentDate ? project.assignmentDate.toDate() : new Date(0);
-                return date.getFullYear() === currentYear && date.getMonth() === currentMonth;
-            }).sort((a, b) => {
-                // مرتب‌سازی از جدید به قدیم
-                const dateA = a.assignmentDate ? a.assignmentDate.toDate() : new Date(0);
-                const dateB = b.assignmentDate ? b.assignmentDate.toDate() : new Date(0);
-                return dateB - dateA; 
-            }); 
-
-            if (currentMonthProjects.length === 0) {
-                projectsHtml = '<p class="text-center text-gray-400 p-4 bg-gray-50 rounded-lg">در ماه جاری تاکنون پروژه‌ای ارجاع نشده است.</p>';
-            } else {
-                projectsHtml += `
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 text-right">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">تاریخ</th>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">مهندس</th>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">نوع کار</th>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">متقاضی</th>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">ارگان</th>
-                                    <th class="px-3 py-2 text-xs font-medium text-gray-500">هزینه (م.ت)</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                `;
-                currentMonthProjects.forEach(p => {
-                    const engineer = allEngineersMap[p.engineerId] || { fullName: 'نامعلوم' };
-                    const dateStr = p.assignmentDate ? p.assignmentDate.toDate().toLocaleDateString('fa-IR') : 'نامعلوم';
-                    
-                    totalCost += p.cost;
-                    totalProjects++;
-
-                    projectsHtml += `
-                        <tr>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${dateStr}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${engineer.fullName}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${p.jobType}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${p.clientName}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${p.relatedOrganization || 'نامشخص'}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">${formatCost(p.cost)}</td>
-                        </tr>
-                    `;
-                });
-                projectsHtml += `</tbody></table></div>`;
+        window.showMonthlyReport = function() {
+            if (!isAuthReady) {
+                 return showMessage('لطفاً صبر کنيد تا اطلاعات بارگذاري شوند.', 'info');
             }
-            monthlyProjectsListEl.innerHTML = projectsHtml;
+            openModal('reportModal');
+            document.getElementById('reportLoadingMessage').classList.remove('hidden');
 
-            // 3. نمایش خلاصه
-            document.getElementById('totalProjectsCount').textContent = `تعداد کل پروژه‌ها: ${totalProjects}`;
-            document.getElementById('totalProjectsCost').textContent = `مجموع هزینه‌ها: ${formatCost(totalCost)}`;
+            const now = new Date();
+            // تاریخ شروع ماه جاری (اولین روز)
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            
+            // فیلتر پروژه‌هایی که در ماه جاری ثبت شده‌اند (با مقایسه سرور تایم استمپ)
+            const currentMonthProjects = allProjects.filter(p => {
+                if (p.createdAt && p.createdAt.seconds) {
+                    const projectDate = new Date(p.createdAt.seconds * 1000);
+                    return projectDate >= startOfMonth;
+                }
+                return false;
+            });
+            
+            renderMonthlyReport(currentMonthProjects, startOfMonth);
+        }
 
-            // 4. نمایش وضعیت سهمیه کلی
+        function renderMonthlyReport(currentMonthProjects, startOfMonth) {
+            
+            // --- 1. خلاصه ماه جاری ---
+            const totalProjectsCount = currentMonthProjects.length;
+            const totalProjectsCost = currentMonthProjects.reduce((sum, p) => sum + p.cost, 0);
+
+            document.getElementById('reportLoadingMessage').classList.add('hidden');
+            document.getElementById('reportModalTitle').textContent = `گزارش جامع ماه ${startOfMonth.toLocaleDateString('fa-IR', { month: 'long', year: 'numeric' })}`;
+            document.getElementById('totalProjectsCount').textContent = `تعداد کل پروژه‌ها: ${totalProjectsCount}`;
+            document.getElementById('totalProjectsCost').textContent = `مجموع هزینه‌های ارجاع شده: ${formatCost(totalProjectsCost)}`;
+
+            // --- 2. جزئیات پروژه‌های ارجاعی در ماه جاری ---
+            const monthlyProjectsListEl = document.getElementById('monthlyProjectsList');
+            if (totalProjectsCount === 0) {
+                 monthlyProjectsListEl.innerHTML = '<p class="text-center text-gray-500 p-8">هيچ پروژه‌اي در ماه جاري ثبت نشده است.</p>';
+            } else {
+                 let listHtml = '';
+                 currentMonthProjects.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds); // جدیدترین بالا
+                 
+                 currentMonthProjects.forEach(p => {
+                     const date = p.createdAt ? new Date(p.createdAt.seconds * 1000).toLocaleDateString('fa-IR') : 'نامشخص';
+                     const engineer = allEngineersMap[p.engineerId] || { name: 'مهندس حذف شده', rank: 'نامشخص' };
+                     
+                     listHtml += `
+                         <div class="p-3 border rounded-lg bg-white shadow-sm flex justify-between items-center">
+                             <div>
+                                 <p class="font-bold text-gray-900">${p.jobType} (${formatCost(p.cost)})</p>
+                                 <p class="text-sm text-blue-700">ارجاع به: ${engineer.name} (${engineer.rank})</p>
+                                 <p class="text-xs text-gray-500">متقاضی: ${p.clientName} | ارگان: ${p.organization}</p>
+                             </div>
+                             <span class="text-sm text-gray-600">${date}</span>
+                         </div>
+                     `;
+                 });
+                 monthlyProjectsListEl.innerHTML = listHtml;
+            }
+
+            // --- 3. وضعیت سهمیه کلی مهندسین ---
             const engineerQuotaSummaryEl = document.getElementById('engineerQuotaSummary');
-            engineerQuotaSummaryEl.innerHTML = document.getElementById('engineerList').innerHTML;
-        };
-        
-        // ====================================================================
-        // === END OF SCRIPT ===
-        // ====================================================================
+            const engineers = Object.values(allEngineersMap);
+
+            if (engineers.length === 0) {
+                 engineerQuotaSummaryEl.innerHTML = '<p class="text-center text-gray-500 p-8">ليست مهندسان در دسترس نيست.</p>';
+                 return;
+            }
+
+            engineers.sort((a, b) => a.usedQuota - b.usedQuota); // مرتب‌سازی بر اساس سهمیه استفاده شده (کمترين به بيشترين)
+
+            let summaryHtml = '';
+            engineers.forEach(eng => {
+                const remaining = eng.quota - eng.usedQuota;
+                const remainingCost = formatCost(Math.max(0, remaining));
+                const debt = remaining < 0 ? formatCost(-remaining) : '0 م.ت';
+                
+                let textColor = remaining >= 0 ? 'text-green-600' : 'text-red-600';
+                
+                summaryHtml += `
+                    <div class="p-3 border-r-4 border-blue-500 bg-white card flex justify-between items-center text-sm">
+                        <div class="font-bold text-gray-800">${eng.name} (${eng.rank})</div>
+                        <div class="text-right">
+                            <p>سهمیه کل: <span class="font-semibold">${formatCost(eng.quota)}</span></p>
+                            <p>استفاده شده: <span class="font-semibold text-blue-600">${formatCost(eng.usedQuota)}</span></p>
+                            <p>باقیمانده / بدهی: <span class="font-bold ${textColor}">${remaining >= 0 ? remainingCost : debt + ' (بدهی)'}</span></p>
+                        </div>
+                    </div>
+                `;
+            });
+            engineerQuotaSummaryEl.innerHTML = summaryHtml;
+        }
+
     </script>
 </body>
 </html>
