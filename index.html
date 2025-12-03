@@ -101,7 +101,7 @@
         // همچنين دکمه تسويه بدهي تک مهندس در تابع renderEngineers کنترل مي‌شود.
     }
 
-
+    
     // ====================================================================
     // === AUTHENTICATION HANDLERS (مديريت ورود و خروج) ===
     // ====================================================================
@@ -385,11 +385,7 @@
                     document.getElementById('googleSignInBtn').classList.remove('hidden');
                     document.getElementById('signOutBtn').classList.add('hidden');
                     
-                    // **[رفع تداخل]: ورود خودکار ناشناس را حذف می‌کنیم.**
-                    // در عوض، کاربر را مجبور می‌کنیم برای ورود با گوگل تلاش کند.
-                    showMessage('لطفاً برای دسترسی، وارد شوید یا از داشبورد عمومی بازدید کنید.', 'info');
-                    
-                    // تنها در صورتی که کاربری فعال نیست، سعی می‌کنیم با ناشناس وارد شویم تا بتواند داده‌ها را بخواند (طبق قوانین)
+                    // **اصلاح نهایی:** تنها در صورتی که کاربری فعال نیست، سعی می‌کنیم با ناشناس وارد شویم تا بتواند داده‌ها را بخواند (طبق قوانین)
                     if (!auth.currentUser) {
                          signInAnonymously(auth).catch((error) => {
                              console.error("خطا در ورود ناشناس:", error);
@@ -772,87 +768,4 @@
     
     window.showEngineerProjects = async function(engineerId, engineerName) {
         openModal('detailsModal');
-        modalTitleRef.textContent = `جزئيات کارهاي مهندس: ${engineerName}`;
-        projectsListRef.innerHTML = '';
-        modalLoadingMessageRef.classList.remove('hidden');
-
-        try {
-            const engineerProjects = allProjects
-                .filter(p => p.engineerId === engineerId)
-                .sort((a, b) => (b.assignedAt?.toMillis() || 0) - (a.assignedAt?.toMillis() || 0));
-
-            modalLoadingMessageRef.classList.add('hidden');
-            
-            if (engineerProjects.length === 0) {
-                projectsListRef.innerHTML = '<p class="text-center text-gray-500 p-4">هيچ کاري براي اين مهندس ثبت نشده است.</p>';
-                return;
-            }
-
-            let projectsHtml = '';
-            engineerProjects.forEach(p => {
-                const assignedDate = p.assignedAt ? new Date(p.assignedAt.toMillis()).toLocaleDateString('fa-IR') : 'نامشخص';
-                const area = p.area ? `${p.area} م.م` : '---';
-                
-                projectsHtml += `
-                    <div class="p-3 border rounded-lg bg-gray-50 hover:bg-gray-100 transition">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="font-bold text-gray-800">${p.jobType}</span>
-                            <span class="text-sm font-semibold text-blue-700">${formatCost(p.cost)}</span>
-                        </div>
-                        <p class="text-xs text-gray-600">
-                            متقاضي: ${p.clientName} | 
-                            ارگان: ${p.organization} |
-                            متراژ: ${area} |
-                            تاريخ: ${assignedDate}
-                        </p>
-                    </div>
-                `;
-            });
-            
-            projectsListRef.innerHTML = projectsHtml;
-
-        } catch (error) {
-            console.error("Error loading project details: ", error);
-            modalLoadingMessageRef.classList.add('hidden');
-            projectsListRef.innerHTML = '<p class="text-center text-red-500 p-4">خطا در بارگذاري جزئيات پروژه.</p>';
-        }
-    }
-    
-    // توابع کمکی که در HTML استفاده می‌شوند باید به صورت سراسری (window) تعریف شوند.
-    window.showConfirmation = showConfirmation;
-    window.showEngineerProjects = showEngineerProjects;
-    window.showView = showView;
-    window.closeModal = closeModal;
-    window.openModal = openModal;
-    window.signInWithGoogle = signInWithGoogle;
-    window.signOutUser = signOutUser;
-</script>
-💡 گام آخر: انتشار قوانین Firestore
-فراموش نکنید که حتماً قوانین فایربیس (Rules) را که در پاسخ قبلی فرستادم، در کنسول Firestore منتشر کنید، در غیر این صورت، برنامه شما هنوز خطای دسترسی می‌دهد:
-
-Code snippet
-
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    
-    // UID ادمين شما
-    function isAdmin() {
-      return request.auth != null && 
-             request.auth.uid == 'v1Ljqk88gJVykzh80uiytdyuTpi2'; 
-    }
-
-    // اجازه خواندن به تمام کاربران احراز هویت شده
-    match /{document=**} {
-      allow read: if request.auth != null;
-    }
-
-    // فقط ادمين اجازه ايجاد، ويرايش و حذف را دارد
-    match /engineers/{engineerId} {
-      allow create, update, delete: if isAdmin();
-    }
-    match /projects/{projectId} {
-      allow create, update, delete: if isAdmin();
-    }
-  }
-}
+        modalTitle
