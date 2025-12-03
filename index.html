@@ -1,771 +1,1128 @@
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, doc, updateDoc, onSnapshot, runTransaction, query, where, getDocs, increment, writeBatch, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; 
-
-    // 🔑 UID ادمین صحیح و نهایی شما
-    const ADMIN_UID = "v1Ljqk88gJVykzh80uiytdyuTpi2"; 
-
-    // CONFIG OBJECT (تنظيمات فايربيس شما)
-    const firebaseConfig = { 
-        apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
-        authDomain: "database-erjakar.firebaseapp.com",
-        projectId: "database-erjakar",
-        storageBucket: "database-erjakar.firebasestorage.app",
-        messagingSenderId: "1056379437698",
-        appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b",
-        measurementId: "G-NS5ZPEFXD8"
-    };
-    
-    // تنظيمات سراسري فايربيس
-    let app, db, auth;
-    let currentAuthUser = null; // نگه داشتن کل آبجکت کاربر فعلي (Anonymous يا Admin)
-    let isAuthReady = false;
-    
-    // --- Static Data ---
-    const PROJECT_COSTS = {
-        'نقشه کروکي': 1,
-        'نقشه تک خطي': 2,
-        'نقشه يو تي ام': 4, 
-    };
-    
-    const JOB_DETAILS = {
-        'نقشه کروکي': { label: 'متراژ زمين (متر مربع):', isAreaRequired: true, organization: 'شهرداري' },
-        'نقشه تک خطي': { label: 'متراژ کل زير بنا (متر مربع):', isAreaRequired: true, organization: 'شهرداري' },
-        'نقشه يو تي ام': { label: 'متراژ زمين (متر مربع):', isAreaRequired: true, organization: 'انتخاب ارگان' }, 
-    };
-
-    const RANK_QUOTAS = {
-        'پايه سه': 10,
-        'پايه دو': 15,
-        'پايه يک': 20,
-    };
-    
-    const RANK_PRIORITY = {
-        'پايه يک': 3,
-        'پايه دو': 2,
-        'پايه سه': 1,
-    };
-
-    const UTM_ORGANIZATIONS = [
-        'اوقاف و امورخيريه',
-        'بنياد مسکن',
-        'جهاد کشاورزي',
-        'منابع طبيعي',
-        'اداره ثبت اسناد و املاک',
-        'ميراث فرهنگي',
-        'شهرداري' 
-    ];
-
-    let ENGINEER_COLLECTION, PROJECTS_COLLECTION;
-    let allEngineersMap = {};
-    let allProjects = [];
-
-    let detailsModalRef, modalTitleRef, projectsListRef, modalLoadingMessageRef;
-    
-    
-    // ====================================================================
-    // === NEW ACCESS CONTROL FUNCTIONS (توابع کنترل دسترسي جديد) ===
-    // ====================================================================
-
-    /**
-     * بررسي مي‌کند که آيا کاربر وارد شده همان ادمين مورد نظر است يا خير.
-     * @returns {boolean}
-     */
-    function isCurrentUserAdmin() {
-        return currentAuthUser && currentAuthUser.uid === ADMIN_UID;
-    }
-
-    /**
-     * مديريت نمايش دکمه‌ها و عناصر مديريتي بر اساس سطح دسترسي.
-     */
-    function handleAccessControl() {
-        const adminButtons = [
-            document.querySelector('button[onclick="showView(\'addEngineerModal\')"]'), // ثبت مهندس جديد
-            document.querySelector('button[onclick="showView(\'assignProjectModal\')"]'), // ارجاع کار جديد
-            document.getElementById('newQuotaButtonContainer') // دکمه تسويه عمومي
-        ];
-        
-        const isAdmin = isCurrentUserAdmin();
-
-        adminButtons.forEach(btn => {
-            if (btn) {
-                if (isAdmin) {
-                    btn.classList.remove('hidden');
-                } else {
-                    btn.classList.add('hidden');
-                }
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سامانه مديريت سهميه مهندسان نقشه بردار</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', Tahoma, Arial, sans-serif;
+            background-color: #f7f9fb;
+        }
+        .card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+        .gradient-bg {
+            /* تنظيم رنگ‌هاي آيکون بهينه‌تر */
+            background: linear-gradient(135deg, #0f3d6c 0%, #2563eb 100%);
+        }
+        .progress-bar-fill {
+            transition: width 0.5s ease-in-out;
+        }
+        .modal-container {
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        /* Style to hide non-active views */
+        .view-container {
+            min-height: 400px; /* Ensure content doesn't jump */
+        }
+        .hidden-view {
+            display: none;
+        }
+        /* Print Styles: Critical for clean printouts */
+        @media print {
+            /* Hide elements not needed in print */
+            .print\:hidden, .modal-container:not(#printReportModal), .card, .gradient-bg, .footer-buttons {
+                display: none !important;
             }
-        });
-
-        // همچنين دکمه تسويه بدهي تک مهندس در تابع renderEngineers کنترل مي‌شود.
-    }
-
-    
-    // ====================================================================
-    // === AUTHENTICATION HANDLERS (مديريت ورود و خروج) ===
-    // ====================================================================
-    
-    // تعريف متد ورود با گوگل
-    const provider = new GoogleAuthProvider();
-
-    /**
-     * شروع فرآيند ورود با گوگل
-     */
-    window.signInWithGoogle = async () => {
-        try {
-            await signInWithPopup(auth, provider);
-            // پس از ورود موفق، onAuthStateChanged فراخوانی می‌شود
-            // showMessage('ورود موفقیت‌آمیز بود.', 'success');
-        } catch (error) {
-            console.error("خطا در ورود با گوگل:", error);
-            showMessage('خطا در ورود با گوگل. لطفاً مطمئن شوید حساب شما فعال است.', 'error');
-        }
-    };
-    
-    /**
-     * خروج کاربر
-     */
-    window.signOutUser = async () => {
-        try {
-            await signOut(auth);
-            showMessage('با موفقیت از حساب خارج شدید.', 'info');
-            // پس از خروج، onAuthStateChanged فراخوانی می‌شود
-        } catch (error) {
-            console.error("خطا در خروج:", error);
-            showMessage('خطا در خروج.', 'error');
-        }
-    };
-
-
-    // ====================================================================
-    // === UTILITY FUNCTIONS (توابع کاربردي) ===
-    // ====================================================================
-
-    function formatCost(cost) {
-        if (typeof cost !== 'number' || isNaN(cost)) return '0';
-        return new Intl.NumberFormat('fa-IR').format(cost.toFixed(2)) + ' م.ت';
-    }
-
-    function showMessage(message, type) {
-        const box = document.getElementById('messageBox');
-        box.textContent = message;
-        box.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 p-4 rounded-lg z-50 transition-all duration-300 shadow-xl w-full max-w-sm text-center';
-
-        switch (type) {
-            case 'success':
-                box.classList.add('bg-green-500', 'text-white');
-                break;
-            case 'error':
-                box.classList.add('bg-red-500', 'text-white');
-                break;
-            case 'info':
-                box.classList.add('bg-blue-500', 'text-white');
-                break;
-        }
-
-        box.classList.remove('hidden');
-
-        setTimeout(() => {
-            box.classList.add('hidden');
-        }, 5000);
-    }
-
-    function showView(viewId) {
-        document.querySelectorAll('.view-container > div').forEach(view => {
-            view.classList.add('hidden-view');
-        });
-        
-        const view = document.getElementById(viewId);
-        if (view) {
-             view.classList.remove('hidden-view');
-        } else {
-             // اگر کاربر به نماي ادمين دسترسي ندارد، داشبورد را نشان بده
-             document.getElementById('dashboardView').classList.remove('hidden-view');
-             if (!isCurrentUserAdmin() && (viewId === 'addEngineerModal' || viewId === 'assignProjectModal')) {
-                 showMessage('شما دسترسي ادمين براي انجام اين عمليات را نداريد.', 'error');
-             }
-        }
-        
-        if (viewId === 'assignProjectModal') {
-            renderDynamicInputs(document.getElementById('jobType').value);
-        }
-
-        closeModal('detailsModal');
-        closeModal('printReportModal');
-        closeModal('confirmationModal');
-    }
-    
-    function closeModal(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.remove('active');
-        }
-    }
-    
-    function openModal(modalId) {
-          const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.add('active');
-        }
-    }
-    
-    // ... (توابع calculateDynamicCost و renderDynamicInputs بدون تغيير باقي مي‌مانند)
-    function calculateDynamicCost(jobType, area) {
-        const baseCost = PROJECT_COSTS[jobType] || 0;
-        let finalCost = baseCost;
-
-        if (jobType === 'نقشه کروکي' && area > 0) {
-             finalCost = baseCost + (area * 0.005);
-        } else if (jobType === 'نقشه تک خطي' && area > 0) {
-             finalCost = baseCost + (area * 0.007);
-        } else if (jobType === 'نقشه يو تي ام' && area > 0) {
-             finalCost = baseCost + (area * 0.01);
-        }
-        
-        return Math.ceil(finalCost * 10) / 10;
-    }
-
-
-    function renderDynamicInputs(jobType) {
-        const container = document.getElementById('dynamicInputs');
-        container.innerHTML = ''; 
-
-        if (!jobType) {
-             container.innerHTML = '<p class="text-sm text-gray-500 text-center">لطفاً نوع کار را انتخاب کنيد تا جزئيات پروژه مشخص شود.</p>';
-             return;
-        }
-
-        const details = JOB_DETAILS[jobType];
-        
-        if (details.isAreaRequired) {
-             const areaInput = `
-                 <div>
-                     <label for="projectArea" class="block text-sm font-medium text-gray-700 mb-1">${details.label}</label>
-                     <input type="number" step="1" min="1" id="projectArea" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="مثلاً: 120">
-                 </div>
-                `;
-             container.innerHTML += areaInput;
-        }
-
-        let selectedOrganization = details.organization;
-
-        if (details.organization === 'انتخاب ارگان') {
-             const orgSelect = document.createElement('select');
-             orgSelect.id = 'relatedOrganization';
-             orgSelect.required = true;
-             orgSelect.className = 'w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500';
-             
-             const defaultOption = document.createElement('option');
-             defaultOption.value = '';
-             defaultOption.textContent = 'انتخاب ارگان مربوطه...';
-             defaultOption.disabled = true;
-             defaultOption.selected = true;
-             orgSelect.appendChild(defaultOption);
-
-             UTM_ORGANIZATIONS.forEach(org => {
-                 const option = document.createElement('option');
-                 option.value = org;
-                 option.textContent = org;
-                 orgSelect.appendChild(option);
-             });
-             
-             const orgDiv = document.createElement('div');
-             orgDiv.innerHTML = '<label for="relatedOrganization" class="block text-sm font-medium text-gray-700 mb-1">ارگان متقاضي نقشه UTM:</label>';
-             orgDiv.appendChild(orgSelect);
-             container.appendChild(orgDiv);
-             selectedOrganization = orgSelect.value;
-        }
-        
-        const initialCost = PROJECT_COSTS[jobType] || 0;
-        const costInput = `
-             <div>
-                 <label for="manualCost" class="block text-sm font-medium text-gray-700 mb-1">هزينه نهايي (ميليون تومان - قابل ويرايش):</label>
-                 <input type="number" step="0.1" min="0.1" id="manualCost" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" value="${initialCost.toFixed(1)}">
-             </div>
-             <div id="calculatedCostInfo" class="text-xs text-gray-500 p-2 border-t mt-2">
-                 <span class="font-bold">ارجاع به:</span> ${selectedOrganization}
-             </div>
-        `;
-        container.innerHTML += costInput;
-
-        const projectAreaEl = document.getElementById('projectArea');
-        const manualCostEl = document.getElementById('manualCost');
-
-        const updateCost = () => {
-            const area = projectAreaEl ? parseFloat(projectAreaEl.value) : 0;
-            let calculated = calculateDynamicCost(jobType, area);
-            
-            if (manualCostEl) {
-                 manualCostEl.value = calculated.toFixed(1);
+            body, html {
+                margin: 0;
+                padding: 0;
+                background: white;
+                color: black;
+            }
+            #printReportModal {
+                display: flex !important;
+                position: static;
+                background: white !important;
+                height: auto;
+                width: 100%;
+                max-width: none;
+            }
+            #reportContentContainer {
+                max-width: 100%;
+                width: 100%;
+                height: auto;
+                box-shadow: none;
+                padding: 0;
+                border: none;
+            }
+            #printReportArea {
+                overflow: visible !important;
+                padding: 0;
+            }
+            .report-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+                border: 1px solid #ccc;
+            }
+            .report-table thead, .report-table tfoot {
+                -webkit-print-color-adjust: exact;
+                color-adjust: exact;
+            }
+            .report-table thead th {
+                background-color: #dbeafe !important;
+                color: #1e3a8a !important; /* Darker blue text */
+            }
+            .report-table tfoot td {
+                background-color: #f3f4f6 !important;
+                font-weight: bold;
+            }
+            .report-table th, .report-table td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: right;
+                font-size: 14px; /* Slightly smaller for print */
+            }
+            /* Show content that was hidden in view */
+            .print-only {
+                display: block !important;
             }
         }
+    </style>
+</head>
+<body class="p-4 md:p-8">
 
-        if (projectAreaEl) {
-            projectAreaEl.addEventListener('input', updateCost);
-            if (projectAreaEl.value) updateCost();
-        }
-        
-        if (document.getElementById('relatedOrganization')) {
-            document.getElementById('relatedOrganization').addEventListener('change', (e) => {
-                 document.getElementById('calculatedCostInfo').innerHTML = `<span class="font-bold">ارجاع به:</span> ${e.target.value}`;
-            });
-        }
-    }
-    
-    document.getElementById('jobType').addEventListener('change', (e) => {
-        renderDynamicInputs(e.target.value);
-    });
-    
-    // ====================================================================
-    // === CORE FIREBASE INITIALIZATION & AUTHENTICATION (اصلاح شده) ===
-    // ====================================================================
-    
-    document.addEventListener('DOMContentLoaded', () => {
-        const jobTypeSelect = document.getElementById('jobType');
-        Object.keys(PROJECT_COSTS).forEach(jobType => {
-            const option = document.createElement('option');
-            option.value = jobType;
-            option.textContent = jobType;
-            jobTypeSelect.appendChild(option);
-        });
-        
-        detailsModalRef = document.getElementById('detailsModal');
-        modalTitleRef = document.getElementById('modalTitle');
-        projectsListRef = document.getElementById('projectsList');
-        modalLoadingMessageRef = document.getElementById('modalLoadingMessage');
-        
-        initializeFirebase();
-        
-        // اتصال دکمه‌های ورود و خروج
-        document.getElementById('googleSignInBtn').addEventListener('click', signInWithGoogle);
-        document.getElementById('signOutBtn').addEventListener('click', signOutUser);
+    <div class="max-w-7xl mx-auto">
+        <header class="gradient-bg text-white p-6 rounded-xl mb-8 card print:hidden">
+            <h1 class="text-3xl font-bold mb-2">سامانه ارجاع کار مهندسان نقشه بردار</h1>
+            <p class="text-sm opacity-90">مديريت سهميه اعتباري و ارجاع پروژه‌ها بر اساس پايه مهندسي و مديريت بدهي.</p>
+        </header>
 
-    });
+        <div id="messageBox" class="hidden fixed top-4 left-1/2 transform -translate-x-1/2 p-4 rounded-lg z-50 transition-all duration-300 shadow-xl w-full max-w-sm text-center" role="alert"></div>
+
+        <div class="flex flex-wrap justify-center gap-4 mb-8 print:hidden">
+            <button onclick="showView('addEngineerModal')"
+                    class="bg-green-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-green-700 transition duration-150 transform hover:scale-105 min-w-[200px]">
+                ثبت مهندس جديد
+            </button>
+            <button onclick="showView('assignProjectModal')"
+                    class="bg-blue-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition duration-150 transform hover:scale-105 min-w-[200px]">
+                ارجاع کار جديد
+            </button>
+            <button onclick="showView('dashboardView')"
+                    class="bg-gray-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-gray-700 transition duration-150 transform hover:scale-105 min-w-[200px]">
+                داشبورد مهندسين
+            </button>
+            <button onclick="showMonthlyReport()"
+                    class="bg-purple-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition duration-150 transform hover:scale-105 min-w-[200px]">
+                آمار ماهيانه
+            </button>
+        </div>
+
+        <div id="contentArea" class="view-container">
+
+            <div id="addEngineerModal" class="bg-white p-6 rounded-xl card hidden-view">
+                <h3 class="text-2xl font-bold text-green-700 border-b pb-3 mb-4">ثبت مهندس جديد</h3>
+                <form id="addEngineerForm" class="space-y-4 max-w-lg mx-auto">
+                    <div>
+                        <label for="engineerName" class="block text-sm font-medium text-gray-700 mb-1">نام و نام خانوادگي مهندس:</label>
+                        <input type="text" id="engineerName" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500" placeholder="مثلاً: علي محمدي">
+                    </div>
+                    <div>
+                        <label for="engineerRank" class="block text-sm font-medium text-gray-700 mb-1">پايه مهندسي:</label>
+                        <select id="engineerRank" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500">
+                            <option value="" disabled selected>انتخاب پايه...</option>
+                            <option value="پايه سه">پايه سه</option>
+                            <option value="پايه دو">پايه دو</option>
+                            <option value="پايه يک">پايه يک</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 text-white p-3 rounded-lg font-bold hover:bg-green-700 transition duration-150 shadow-md">ذخيره مهندس</button>
+                </form>
+            </div>
 
 
-    function initializeFirebase() {
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            
-            onAuthStateChanged(auth, (user) => {
-                currentAuthUser = user;
-                isAuthReady = true;
+            <div id="assignProjectModal" class="bg-white p-6 rounded-xl card hidden-view">
+                <h3 class="text-2xl font-bold text-blue-800 border-b pb-3 mb-4">ارجاع کار جديد</h3>
+                <form id="assignProjectForm" class="space-y-5 max-w-lg mx-auto">
+                    <div>
+                        <label for="jobType" class="block text-sm font-medium text-gray-700 mb-1">نوع کار / نقشه:</label>
+                        <select id="jobType" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                            <option value="" disabled selected>انتخاب نوع کار...</option>
+                            </select>
+                    </div>
+
+                    <div id="dynamicInputs" class="space-y-4 p-4 border rounded-lg bg-gray-50">
+                        <p class="text-sm text-gray-500 text-center">لطفاً نوع کار را انتخاب کنيد تا جزئيات پروژه مشخص شود.</p>
+                    </div>
+                    
+                    <div>
+                        <label for="clientName" class="block text-sm font-medium text-gray-700 mb-1">نام متقاضي تهيه نقشه:</label>
+                        <input type="text" id="clientName" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="مثلاً: شرکت توسعه شهر">
+                    </div>
+
+                    <div id="assignmentResult" class="p-4 border-r-4 rounded-lg text-gray-800 hidden">
+                        <h3 class="font-bold text-lg mb-2">نتيجه ارجاع کار:</h3>
+                        <p id="resultText" class="text-blue-700 font-semibold"></p>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition duration-150 shadow-md">ارجاع کار و معرفي مهندس</button>
+                </form>
+            </div>
+
+
+            <div id="dashboardView" class="bg-white p-6 rounded-xl card hidden-view">
+                <h2 class="text-2xl font-semibold border-b pb-3 mb-4 text-gray-800">داشبورد سهميه مهندسين (ميليون تومان)</h2>
+
+                <div class="text-center p-4 text-gray-500" id="loadingMessage">در حال بارگذاري اطلاعات مهندسان...</div>
+                <div id="engineerList" class="space-y-4">
+                    </div>
+
+                <div id="newQuotaButtonContainer" class="mt-8 pt-4 border-t flex justify-center hidden">
+                    <button onclick="resetAllEngineersQuotas()" class="bg-red-700 text-white p-3 text-lg rounded-lg hover:bg-red-800 transition duration-150 shadow-2xl flex items-center font-bold">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 ml-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v2M2 12A10 10 0 0 1 12 2a10 10 0 0 1 10 10M8 12l4 4 4-4" /></svg>
+                        باز کردن سهميه جديد براي همه مهندسان (تسويه بدهي)
+                    </button>
+                </div>
                 
-                handleAccessControl(); // بروزرسانی دکمه‌های ادمین
+            </div>
 
-                if (user) {
-                    const isAdmin = isCurrentUserAdmin();
-                    
-                    // مخفی کردن دکمه ورود، نمایش دکمه خروج
-                    document.getElementById('googleSignInBtn').classList.add('hidden');
-                    document.getElementById('signOutBtn').classList.remove('hidden');
+        </div> </div>
 
 
-                    if (isAdmin) {
-                        showMessage(`شما با موفقيت به عنوان ادمين (${user.uid.substring(0, 8)}...) متصل شديد. تمام دکمه‌هاي مديريتي فعال شدند.`, 'success');
-                    } else if (!user.isAnonymous) {
-                         showMessage(`شما با حساب گوگل وارد شده‌ايد و به عنوان بازديدکننده دسترسي داريد.`, 'info');
-                    } else {
-                         // حالت ناشناس
-                         showMessage(`شما به عنوان بازديدکننده ناشناس متصل شدید.`, 'info');
-                    }
-                    
-                    ENGINEER_COLLECTION = collection(db, 'engineers');
-                    PROJECTS_COLLECTION = collection(db, 'projects');
-
-                    startRealtimeListeners();
-                    showView('dashboardView');
-                    
-                } else {
-                    // هیچ کاربری وارد نشده (حتی ناشناس)
-                    currentAuthUser = null;
-                    document.getElementById('googleSignInBtn').classList.remove('hidden');
-                    document.getElementById('signOutBtn').classList.add('hidden');
-                    
-                    // **اصلاح نهایی:** تنها در صورتی که کاربری فعال نیست، سعی می‌کنیم با ناشناس وارد شویم تا بتواند داده‌ها را بخواند (طبق قوانین)
-                    if (!auth.currentUser) {
-                         signInAnonymously(auth).catch((error) => {
-                             console.error("خطا در ورود ناشناس:", error);
-                             showMessage(`خطا در ورود: ${error.code} - Anonymous باید فعال باشد.`, 'error');
-                         });
-                    }
-                    
-                    showView('dashboardView');
-                }
-            });
-
-        } catch (e) {
-            console.error("خطا در راه‌اندازي فايربيس:", e);
-            showMessage('خطا: راه‌اندازي فايربيس ناموفق بود.', 'error');
-        }
-    }
-    
-    // ====================================================================
-    // === REALTIME LISTENERS & RENDERING (حالت Public) ===
-    // ====================================================================
-
-    function startRealtimeListeners() {
-        if (!isAuthReady) return;
-
-        const engineersQuery = query(ENGINEER_COLLECTION); // ALL Engineers
-        const projectsQuery = query(PROJECTS_COLLECTION); // ALL Projects
-
-
-        onSnapshot(engineersQuery, (querySnapshot) => {
-            const engineers = [];
-            querySnapshot.forEach((doc) => {
-                const data = doc.data();
-                allEngineersMap[doc.id] = { id: doc.id, ...data };
-                engineers.push({ id: doc.id, ...data });
-            });
-            renderEngineers(engineers);
-        }, (error) => {
-            console.error("Error listening to engineers collection: ", error);
-            showMessage("خطا در بارگذاري ليست مهندسان: " + error.message, 'error');
-        });
-        
-        onSnapshot(projectsQuery, (querySnapshot) => {
-            allProjects = [];
-            querySnapshot.forEach((doc) => {
-                allProjects.push({ id: doc.id, ...doc.data() });
-            });
-        }, (error) => {
-            console.error("Error listening to projects collection: ", error);
-            showMessage("خطا در بارگذاري ليست پروژه‌ها: " + error.message, 'error');
-        });
-    }
-
-
-    /**
-     * رندر ليست مهندسان در داشبورد
-     * @param {Array<Object>} engineers 
-     */
-    function renderEngineers(engineers) {
-        const listContainer = document.getElementById('engineerList');
-        const loadingMessage = document.getElementById('loadingMessage');
-        const quotaBtnContainer = document.getElementById('newQuotaButtonContainer');
-
-        loadingMessage.classList.add('hidden');
-        
-        if (engineers.length === 0) {
-             listContainer.innerHTML = '<p class="text-center text-xl text-gray-500 p-8"> هیچ مهندسي ثبت نشده است.</p>';
-             quotaBtnContainer.classList.add('hidden');
-             return;
-        }
-
-        engineers.sort((a, b) => {
-            const rankA = RANK_PRIORITY[a.rank] || 0;
-            const rankB = RANK_PRIORITY[b.rank] || 0;
-            if (rankA !== rankB) {
-                return rankB - rankA;
-            }
-            return b.debt - a.debt;
-        });
-        
-        let html = '';
-        let allDebtsSettled = true;
-        const isAdmin = isCurrentUserAdmin();
-
-        engineers.forEach(eng => {
-            const quotaMax = RANK_QUOTAS[eng.rank] || 0;
-            const remainingQuota = Math.max(0, quotaMax - eng.debt);
-            const debtPercent = quotaMax > 0 ? (eng.debt / quotaMax) * 100 : 0;
-            const isOverQuota = eng.debt > quotaMax;
+    <div id="detailsModal" class="modal-container hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl card max-w-2xl w-full p-6" role="dialog" aria-modal="true">
+            <div class="flex justify-between items-start border-b pb-3 mb-4">
+                <h3 id="modalTitle" class="text-xl md:text-2xl font-bold text-blue-800">جزئيات کارها</h3>
+                <button onclick="closeModal('detailsModal')" class="text-gray-400 hover:text-gray-600 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
             
-            if (eng.debt > 0) {
-                allDebtsSettled = false;
-            }
+            <div id="projectsList" class="max-h-96 overflow-y-auto space-y-3">
+                <div class="text-center p-4 text-gray-500" id="modalLoadingMessage">در حال بارگذاري جزئيات کارها...</div>
+            </div>
 
-            // دکمه تسويه فقط براي ادمين نمايش داده مي‌شود
-            const resetBtnHtml = isAdmin ? `
-                 <button onclick="showConfirmation('resetQuota', '${eng.id}', '${eng.name}')" 
-                     class="bg-red-500 text-white p-2 text-sm rounded-lg hover:bg-red-600 transition shadow-md">
-                     تسويه
-                 </button>
-            ` : '';
+            <div class="mt-6 border-t pt-4 text-left">
+                <button onclick="closeModal('detailsModal')" class="bg-blue-600 text-white p-2 px-4 rounded-lg hover:bg-blue-700 transition">بستن</button>
+            </div>
+        </div>
+    </div>
 
-            html += `
-                 <div class="p-4 bg-white rounded-lg card flex items-center justify-between transition duration-150 hover:shadow-lg border ${isOverQuota ? 'border-red-500' : 'border-blue-200'}">
-                     <div class="flex-1 min-w-0">
-                         <h4 class="text-lg font-bold text-gray-800 truncate">${eng.name}</h4>
-                         <p class="text-sm text-blue-600 font-semibold">${eng.rank}</p>
-                         <p class="text-xs text-gray-500 mt-1">آخرين ارجاع: ${eng.lastAssignedProject || 'ندارد'}</p>
-                     </div>
+    <div id="printReportModal" class="modal-container hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div id="reportContentContainer" class="bg-white rounded-xl card max-w-6xl w-full p-6 h-[90vh] flex flex-col" role="dialog" aria-modal="true">
+            <div class="flex justify-between items-start border-b pb-3 mb-4 flex-shrink-0 print:hidden">
+                <h3 class="text-2xl font-bold text-gray-800">گزارش جامع ماهيانه ارجاعات کار</h3>
+                <button onclick="closeModal('printReportModal')" class="text-gray-400 hover:text-gray-600 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            
+            <div id="printReportArea" class="flex-grow overflow-y-auto p-2">
+                <div class="text-center p-8 text-gray-500">در حال آماده‌سازي گزارش...</div>
+            </div>
 
-                     <div class="w-2/5 mx-4">
-                         <div class="text-xs font-semibold flex justify-between mb-1">
-                             <span class="${isOverQuota ? 'text-red-600' : 'text-gray-800'}">بدهي: ${formatCost(eng.debt)}</span>
-                             <span class="text-gray-600">سهميه: ${formatCost(quotaMax)}</span>
-                         </div>
-                         <div class="w-full bg-gray-200 rounded-full h-2.5">
-                             <div class="progress-bar-fill h-2.5 rounded-full ${isOverQuota ? 'bg-red-500' : 'bg-blue-500'}" style="width: ${Math.min(100, debtPercent)}%"></div>
-                         </div>
-                     </div>
-
-                     <div class="text-right">
-                         <p class="text-sm font-semibold ${isOverQuota ? 'text-red-700' : 'text-green-700'}">باقيمانده:</p>
-                         <p class="text-base font-bold ${isOverQuota ? 'text-red-700' : 'text-green-700'}">${formatCost(remainingQuota)}</p>
-                     </div>
-                     
-                     <div class="ml-4 flex gap-2">
-                         <button onclick="showEngineerProjects('${eng.id}', '${eng.name}')" 
-                             class="bg-blue-500 text-white p-2 text-sm rounded-lg hover:bg-blue-600 transition shadow-md whitespace-nowrap">
-                             جزئيات کارها
-                         </button>
-                         ${resetBtnHtml}
-                     </div>
-                 </div>
-            `;
-        });
-
-        listContainer.innerHTML = html;
-        
-        // دکمه تسويه عمومي فقط اگر بدهي تسويه نشده باشد و کاربر ادمين باشد، نمايش داده مي‌شود
-        if (!allDebtsSettled && isAdmin) {
-            quotaBtnContainer.classList.remove('hidden');
-        } else {
-            quotaBtnContainer.classList.add('hidden');
-        }
-    }
+            <div class="mt-4 border-t pt-4 flex justify-end gap-3 flex-shrink-0 footer-buttons print:hidden">
+                <button onclick="window.printReport()" class="bg-green-600 text-white p-2 px-4 rounded-lg hover:bg-green-700 transition flex items-center font-bold">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 4v3H3v6h2v3h10v-3h2V7h-2V4h-3V3H8v1H5zm0 1h2v2H5V5zm10 0v2h-2V5h2zM5 14v-2h10v2H5zm10 2v-2h-2v2h2zM5 16h2v-2H5v2z" clip-rule="evenodd"/></svg>
+                    چاپ گزارش
+                </button>
+                <button onclick="closeModal('printReportModal')" class="bg-gray-500 text-white p-2 px-4 rounded-lg hover:bg-gray-600 transition">بستن</button>
+            </div>
+        </div>
+    </div>
     
-    // ====================================================================
-    // === CORE LOGIC (ADD/ASSIGN/RESET) (اعمال کنترل دسترسي سمت کلاينت) ===
-    // ====================================================================
+    <div id="confirmationModal" class="modal-container hidden fixed inset-0 bg-gray-900 bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl card max-w-sm w-full p-6" role="alertdialog" aria-modal="true">
+            <h3 id="confirmModalTitle" class="text-xl font-bold text-red-700 border-b pb-2 mb-4">تاييد عمليات</h3>
+            <p id="confirmModalMessage" class="text-gray-700 mb-6"></p>
+            <div class="flex justify-end gap-3">
+                <button id="confirmCancelBtn" onclick="closeModal('confirmationModal')" class="bg-gray-300 text-gray-800 p-2 px-4 rounded-lg hover:bg-gray-400 transition">انصراف</button>
+                <button id="confirmAcceptBtn" class="bg-red-600 text-white p-2 px-4 rounded-lg hover:bg-red-700 transition">تاييد و اجرا</button>
+            </div>
+        </div>
+    </div>
 
-    // Engineer Submission
-    document.getElementById('addEngineerForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, onSnapshot, runTransaction, query, where, getDocs, increment, writeBatch, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // serverTimestamp اضافه شد
+
+        // CONFIG OBJECT
+        const firebaseConfig = { // نام‌گذاري براي وضوح بهتر
+            apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
+            authDomain: "database-erjakar.firebaseapp.com",
+            projectId: "database-erjakar",
+            storageBucket: "database-erjakar.firebasestorage.app",
+            messagingSenderId: "1056379437698",
+            appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b",
+            measurementId: "G-NS5ZPEFXD8"
+        };
         
-        // کنترل دسترسي در زمان اجراي عمليات
-        if (!isAuthReady || !isCurrentUserAdmin()) {
-            showMessage('دسترسي لازم براي ثبت مهندس را نداريد.', 'error');
-            return;
-        }
-
-        const name = document.getElementById('engineerName').value.trim();
-        const rank = document.getElementById('engineerRank').value;
-
-        if (name === "" || rank === "") {
-            showMessage('لطفاً تمام فيلدها را پر کنيد.', 'error');
-            return;
-        }
+        // تنظيمات سراسري فايربيس
+        let app, db, auth, userId = null;
+        let isAuthReady = false;
         
-        const newEngineer = {
-            name: name,
-            rank: rank,
-            quotaMax: RANK_QUOTAS[rank] || 0,
-            debt: 0,
-            lastAssignedProject: null,
-            userId: ADMIN_UID, // تمام داده‌ها هنوز با آيدي ادمين شما ذخيره مي‌شوند
-            createdAt: serverTimestamp(),
+        // --- Static Data ---
+
+        // مبالغ پيش‌فرض براي انواع کار (به واحد ميليون تومان)
+        const PROJECT_COSTS = {
+            'نقشه کروکي': 1,
+            'نقشه تک خطي': 2,
+            'نقشه يو تي ام': 4, 
+        };
+        
+        // اطلاعات کامل براي مديريت فيلدهاي متغير
+        const JOB_DETAILS = {
+            'نقشه کروکي': { label: 'متراژ زمين (متر مربع):', isAreaRequired: true, organization: 'شهرداري' },
+            'نقشه تک خطي': { label: 'متراژ کل زير بنا (متر مربع):', isAreaRequired: true, organization: 'شهرداري' },
+            'نقشه يو تي ام': { label: 'متراژ زمين (متر مربع):', isAreaRequired: true, organization: 'انتخاب ارگان' }, 
         };
 
-        try {
-            await addDoc(ENGINEER_COLLECTION, newEngineer);
-            showMessage(`مهندس ${name} با موفقيت ثبت شد.`, 'success');
-            document.getElementById('addEngineerForm').reset();
-            showView('dashboardView');
-        } catch (error) {
-            console.error("خطا در ثبت مهندس: ", error);
-            showMessage('خطا در ثبت مهندس. لطفاً دوباره تلاش کنيد.', 'error');
-        }
-    });
-
-
-    // Project Assignment
-    document.getElementById('assignProjectForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
+        // سقف سهميه بر اساس پايه (به واحد ميليون تومان)
+        const RANK_QUOTAS = {
+            'پايه سه': 10,
+            'پايه دو': 15,
+            'پايه يک': 20,
+        };
         
-        // کنترل دسترسي در زمان اجراي عمليات
-        if (!isAuthReady || !isCurrentUserAdmin()) {
-            showMessage('دسترسي لازم براي ارجاع کار را نداريد.', 'error');
-            return;
+        // اولويت عددي پايه مهندسي براي مرتب‌سازي (بيشتر = اولويت بالاتر)
+        const RANK_PRIORITY = {
+            'پايه يک': 3,
+            'پايه دو': 2,
+            'پايه سه': 1,
+        };
+
+        // ارگان‌هاي مربوطه براي نقشه‌هاي UTM
+        const UTM_ORGANIZATIONS = [
+            'اوقاف و امورخيريه',
+            'بنياد مسکن',
+            'جهاد کشاورزي',
+            'منابع طبيعي',
+            'اداره ثبت اسناد و املاک',
+            'ميراث فرهنگي',
+            'شهرداري' 
+        ];
+        
+        // مسيرهاي فايربيس
+        let ENGINEER_COLLECTION, PROJECTS_COLLECTION;
+        let allEngineersMap = {}; // Cache for engineer details
+        let allProjects = []; // Cache for all projects (used in reporting)
+
+        // مرجع عناصر Modal
+        let detailsModalRef, modalTitleRef, projectsListRef, modalLoadingMessageRef;
+        
+        
+        // ====================================================================
+        // === CORE FIREBASE INITIALIZATION & AUTHENTICATION (اصلاح شده) ===
+        // ====================================================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // Populate Job Type dropdown on load
+            const jobTypeSelect = document.getElementById('jobType');
+            Object.keys(PROJECT_COSTS).forEach(jobType => {
+                const option = document.createElement('option');
+                option.value = jobType;
+                option.textContent = jobType;
+                jobTypeSelect.appendChild(option);
+            });
+            
+            // Initial element references
+            detailsModalRef = document.getElementById('detailsModal');
+            modalTitleRef = document.getElementById('modalTitle');
+            projectsListRef = document.getElementById('projectsList');
+            modalLoadingMessageRef = document.getElementById('modalLoadingMessage');
+
+            // Start Firebase setup
+            initializeFirebase();
+        });
+
+
+        function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // --- Start Authentication ---
+                // onAuthStateChanged تضمين مي‌کند که کدهاي ديتابيس فقط بعد از ورود اجرا شوند
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        // کاربر وارد شده (ناشناس يا غيره)
+                        userId = user.uid;
+                        isAuthReady = true;
+                        showMessage(`احراز هويت با موفقيت انجام شد. UID: ${userId.substring(0, 8)}...`, 'success');
+                        
+                        // تعريف مراجع کالکشن‌ها پس از در دسترس بودن UID
+                        ENGINEER_COLLECTION = collection(db, 'engineers');
+                        PROJECTS_COLLECTION = collection(db, 'projects');
+
+                        // شروع گوش دادن به کالکشن‌ها (خواندن)
+                        startRealtimeListeners();
+                        
+                    } else {
+                        // کاربر وارد نيست، تلاش براي ورود ناشناس
+                        showMessage('در حال احراز هويت ناشناس...', 'info');
+                        signInAnonymously(auth)
+                            .then(() => {
+                                // onAuthStateChanged دوباره صدا زده مي‌شود
+                            })
+                            .catch((error) => {
+                                console.error("خطا در ورود ناشناس:", error);
+                                showMessage(`خطا در ورود ناشناس: ${error.message}`, 'error');
+                            });
+                    }
+                });
+
+            } catch (e) {
+                console.error("خطا در راه‌اندازي فايربيس:", e);
+                showMessage('خطا: راه‌اندازي فايربيس ناموفق بود.', 'error');
+            }
         }
         
-        // ... (بقيه منطق ارجاع کار بدون تغيير)
-        const jobType = document.getElementById('jobType').value;
-        const clientName = document.getElementById('clientName').value.trim();
-        const projectAreaEl = document.getElementById('projectArea');
-        const projectArea = projectAreaEl ? parseFloat(projectAreaEl.value) : 0;
-        const manualCost = parseFloat(document.getElementById('manualCost').value);
-        const relatedOrganizationEl = document.getElementById('relatedOrganization');
-        let organization = JOB_DETAILS[jobType].organization;
+        // ====================================================================
+        // === REALTIME LISTENERS (اصلاح شده) ===
+        // ====================================================================
 
-        if (organization === 'انتخاب ارگان' && relatedOrganizationEl) {
-            organization = relatedOrganizationEl.value;
-        } else if (organization === 'انتخاب ارگان') {
-            showMessage('لطفاً ارگان مربوطه را انتخاب کنيد.', 'error');
-            return;
+        function startRealtimeListeners() {
+            if (!isAuthReady || !userId) return;
+
+            // 1. گوش دادن به کالکشن مهندسان
+            // Query: فقط مهندسان متعلق به کاربر فعلي
+            const engineersQuery = query(ENGINEER_COLLECTION, where("userId", "==", userId));
+
+            onSnapshot(engineersQuery, (querySnapshot) => {
+                const engineers = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    // ذخيره در نقشه (Map) براي دسترسي آسان توسط ID
+                    allEngineersMap[doc.id] = { id: doc.id, ...data };
+                    engineers.push({ id: doc.id, ...data });
+                });
+                renderEngineers(engineers);
+            }, (error) => {
+                console.error("Error listening to engineers collection: ", error);
+                showMessage("خطا در بارگذاري ليست مهندسان: " + error.message, 'error');
+            });
+            
+            // 2. گوش دادن به کالکشن پروژه‌ها (فقط براي گزارش‌گيري)
+            // Query: فقط پروژه‌هاي متعلق به کاربر فعلي
+            const projectsQuery = query(PROJECTS_COLLECTION, where("userId", "==", userId));
+
+            onSnapshot(projectsQuery, (querySnapshot) => {
+                allProjects = []; // Clear old cache
+                querySnapshot.forEach((doc) => {
+                    allProjects.push({ id: doc.id, ...doc.data() });
+                });
+                // showMessage("ليست پروژه‌ها به روز شد.", 'info'); // پيغام زياد
+            }, (error) => {
+                console.error("Error listening to projects collection: ", error);
+                showMessage("خطا در بارگذاري ليست پروژه‌ها: " + error.message, 'error');
+            });
         }
 
-        if (jobType === "" || clientName === "" || isNaN(manualCost) || manualCost <= 0) {
-              showMessage('لطفاً تمام فيلدهاي الزامي را پر کنيد.', 'error');
-              return;
+
+        // ====================================================================
+        // === CORE LOGIC (اصلاح شده) ===
+        // ====================================================================
+
+        // تابع اضافه کردن مهندس جديد (اصلاح شده)
+        async function addEngineer(e) {
+            e.preventDefault();
+            
+            if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است. لطفا برنامه را ريفرش کنيد.", 'error');
+                return;
+            }
+
+            const fullName = document.getElementById('engineerName').value;
+            const rank = document.getElementById('engineerRank').value;
+
+            try {
+                const newEngineer = {
+                    fullName,
+                    rank,
+                    maxQuota: RANK_QUOTAS[rank], // سهميه اوليه بر اساس پايه
+                    usedQuota: 0, // شروع با سهميه مصرفي صفر
+                    // --- **فيلد حياتي براي امنيت و قوانين Firestore** ---
+                    userId: userId, 
+                    // ----------------------------------------------------
+                    createdAt: serverTimestamp()
+                };
+
+                await addDoc(ENGINEER_COLLECTION, newEngineer);
+                showMessage("مهندس با موفقيت ثبت شد.", 'success');
+                document.getElementById('addEngineerForm').reset();
+                showView('dashboardView');
+
+            } catch (error) {
+                console.error("Error adding engineer: ", error);
+                showMessage("خطا در ثبت مهندس. لطفاً دوباره تلاش کنيد. (مجوز دسترسي)", 'error');
+            }
         }
         
-        try {
-            const eligibleEngineers = Object.values(allEngineersMap)
-                .filter(eng => {
-                    const quotaMax = RANK_QUOTAS[eng.rank] || 0;
-                    const remainingQuota = quotaMax - eng.debt;
-                    return remainingQuota >= manualCost;
-                })
-                .sort((a, b) => a.debt - b.debt);
+        // تابع ارجاع کار و معرفي مهندس (اصلاح شده)
+        async function assignProject(e) {
+            e.preventDefault();
+            
+            if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است. لطفا برنامه را ريفرش کنيد.", 'error');
+                return;
+            }
 
-            if (eligibleEngineers.length === 0) {
-                const resultDiv = document.getElementById('assignmentResult');
-                resultDiv.classList.remove('hidden', 'border-r-4', 'border-green-500');
-                resultDiv.classList.add('border-r-4', 'border-red-500');
-                document.getElementById('resultText').textContent = `متأسفانه هيچ مهندسي با سهميه کافي (باقيمانده بيشتر يا مساوي ${formatCost(manualCost)}) يافت نشد.`;
-                showMessage('خطا: عدم وجود مهندس واجد شرايط.', 'error');
+            const jobType = document.getElementById('jobType').value;
+            const clientName = document.getElementById('clientName').value;
+            const projectAreaEl = document.getElementById('projectArea');
+            const manualCostEl = document.getElementById('manualCost');
+            const relatedOrganizationEl = document.getElementById('relatedOrganization');
+            
+            // Check for required fields
+            if (!jobType || !clientName || !manualCostEl || !manualCostEl.value) {
+                showMessage("لطفاً تمام فيلدهاي ضروري را پر کنيد.", 'error');
+                return;
+            }
+
+            const jobDetail = JOB_DETAILS[jobType];
+            const area = projectAreaEl ? parseFloat(projectAreaEl.value) : 0;
+            const cost = parseFloat(manualCostEl.value); // هزينه نهايي به ميليون تومان
+            
+            let organization;
+            if (jobDetail.organization === 'انتخاب ارگان') {
+                organization = relatedOrganizationEl ? relatedOrganizationEl.value : '';
+                if (!organization) {
+                    showMessage("لطفاً ارگان مربوطه را براي نقشه UTM انتخاب کنيد.", 'error');
+                    return;
+                }
+            } else {
+                organization = jobDetail.organization;
+            }
+
+            // 1. يافتن بهترين مهندس
+            // از ليست کش شده مهندسان استفاده کنيد.
+            const availableEngineers = Object.values(allEngineersMap).filter(eng => {
+                const remaining = eng.maxQuota - eng.usedQuota;
+                return remaining >= cost; // مهندس بايد سهميه کافي داشته باشد
+            });
+
+            // مرتب‌سازي: پايه بالاتر + بيشترين سهميه باقيمانده
+            const sortedAvailableEngineers = availableEngineers.sort((a, b) => {
+                const rankA = RANK_PRIORITY[a.rank] || 0;
+                const rankB = RANK_PRIORITY[b.rank] || 0;
+                if (rankB !== rankA) {
+                    return rankB - rankA;
+                }
+                const remainingA = a.maxQuota - a.usedQuota;
+                const remainingB = b.maxQuota - b.usedQuota;
+                return remainingB - remainingA;
+            });
+
+            const assignedEngineer = sortedAvailableEngineers[0];
+
+            const resultDiv = document.getElementById('assignmentResult');
+            const resultText = document.getElementById('resultText');
+
+            if (!assignedEngineer) {
+                resultText.textContent = `هيچ مهندسي با سهميه آزاد کافي (${formatCost(cost)} مورد نياز) يافت نشد.`;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.add('border-red-400');
+                resultDiv.classList.remove('border-blue-400');
+                showMessage("خطا: سهميه مهندسان کافي نيست.", 'error');
                 return;
             }
             
-            const assignedEngineer = eligibleEngineers[0];
-            const assignedEngineerRef = doc(ENGINEER_COLLECTION, assignedEngineer.id);
-            
-            let resultText = '';
+            // 2. انجام تراکنش (به روز رساني سهميه مهندس + ثبت پروژه)
+            try {
+                await runTransaction(db, async (transaction) => {
+                    
+                    // A. به‌روزرساني سهميه مهندس
+                    const engineerRef = doc(ENGINEER_COLLECTION, assignedEngineer.id);
+                    const engineerDoc = await transaction.get(engineerRef);
 
-            await runTransaction(db, async (transaction) => {
-                
-                transaction.update(assignedEngineerRef, {
-                    debt: increment(manualCost),
-                    lastAssignedProject: clientName,
-                });
-                
-                const newProject = {
-                    jobType: jobType,
-                    cost: manualCost,
-                    area: projectArea,
-                    clientName: clientName,
-                    organization: organization,
-                    engineerId: assignedEngineer.id,
-                    engineerName: assignedEngineer.name,
-                    engineerRank: assignedEngineer.rank,
-                    userId: ADMIN_UID, // مالکيت پروژه
-                    assignedAt: serverTimestamp(),
-                };
-                transaction.set(doc(PROJECTS_COLLECTION), newProject);
-
-                resultText = `کار به مهندس ${assignedEngineer.name} (${assignedEngineer.rank}) با موفقيت ارجاع شد. بدهي افزايش يافت به ميزان ${formatCost(manualCost)}.`;
-            });
-
-            const resultDiv = document.getElementById('assignmentResult');
-            resultDiv.classList.remove('hidden', 'border-r-4', 'border-red-500');
-            resultDiv.classList.add('border-r-4', 'border-green-500');
-            document.getElementById('resultText').textContent = resultText;
-            
-            showMessage('ارجاع کار با موفقيت انجام شد.', 'success');
-            document.getElementById('assignProjectForm').reset();
-            renderDynamicInputs(null);
-            
-        } catch (error) {
-            console.error("خطا در ارجاع پروژه (تراکنش): ", error);
-            showMessage('خطا در ارجاع پروژه. احتمالاً سهميه کافي وجود ندارد يا مشکل شبکه است.', 'error');
-        }
-    });
-    
-    
-    // Reset Quota (Single Engineer)
-    async function resetEngineerQuota(engineerId, engineerName) {
-        // کنترل دسترسي در زمان اجراي عمليات
-        if (!isAuthReady || !isCurrentUserAdmin()) {
-            showMessage('دسترسي لازم براي تسويه بدهي را نداريد.', 'error');
-            closeModal('confirmationModal');
-            return;
-        }
-        
-        const engineerRef = doc(ENGINEER_COLLECTION, engineerId);
-        
-        try {
-            await updateDoc(engineerRef, {
-                debt: 0,
-                lastResetAt: serverTimestamp(),
-            });
-            showMessage(`بدهي مهندس ${engineerName} با موفقيت تسويه شد.`, 'success');
-        } catch (error) {
-            console.error("خطا در تسويه سهميه: ", error);
-            showMessage(`خطا در تسويه سهميه مهندس ${engineerName}.`, 'error');
-        } finally {
-            closeModal('confirmationModal');
-        }
-    }
-    
-    // Reset All Quotas
-    async function resetAllQuotas() {
-        // کنترل دسترسي در زمان اجراي عمليات
-        if (!isAuthReady || !isCurrentUserAdmin()) {
-            showMessage('دسترسي لازم براي تسويه عمومي بدهي را نداريد.', 'error');
-            closeModal('confirmationModal');
-            return;
-        }
-        
-        closeModal('confirmationModal');
-        showMessage('در حال تسويه بدهي همه مهندسان...', 'info');
-
-        try {
-            const batch = writeBatch(db);
-            let count = 0;
-            
-            for (const id in allEngineersMap) {
-                const eng = allEngineersMap[id];
-                if (eng.debt > 0) {
-                    const engineerRef = doc(ENGINEER_COLLECTION, id);
-                    batch.update(engineerRef, {
-                        debt: 0,
-                        lastResetAt: serverTimestamp(),
+                    if (!engineerDoc.exists()) {
+                        throw new Error("سند مهندس يافت نشد.");
+                    }
+                    
+                    // به روز رساني فيلد usedQuota
+                    const newUsedQuota = engineerDoc.data().usedQuota + cost;
+                    transaction.update(engineerRef, { 
+                        usedQuota: newUsedQuota
                     });
-                    count++;
+                    
+                    // B. ثبت پروژه جديد
+                    const newProject = {
+                        engineerId: assignedEngineer.id,
+                        engineerName: assignedEngineer.fullName,
+                        jobType: jobType,
+                        clientName: clientName,
+                        area: area,
+                        cost: cost,
+                        organization: organization,
+                        // --- **فيلد حياتي براي امنيت و قوانين Firestore** ---
+                        userId: userId, 
+                        // ----------------------------------------------------
+                        assignedAt: serverTimestamp()
+                    };
+
+                    transaction.set(doc(PROJECTS_COLLECTION), newProject);
+                });
+
+                // Success
+                resultText.innerHTML = `کار با موفقيت به <span class="text-green-700 font-bold">${assignedEngineer.fullName}</span> (پايه ${assignedEngineer.rank}) ارجاع شد. <br>هزينه: ${formatCost(cost)}`;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.add('border-blue-400');
+                resultDiv.classList.remove('border-red-400');
+                showMessage("کار با موفقيت ارجاع داده شد.", 'success');
+                document.getElementById('assignProjectForm').reset();
+                renderDynamicInputs(''); // Reset dynamic inputs
+
+            } catch (error) {
+                console.error("خطا در ارجاع کار (تراکنش): ", error);
+                showMessage("خطا در ارجاع کار. لطفا دوباره تلاش کنيد. (تراکنش ناموفق)", 'error');
+                // رندر مجدد نتيجه خطا
+                resultText.innerHTML = `خطا در ثبت تراکنش: ${error.message}`;
+                resultDiv.classList.remove('hidden');
+                resultDiv.classList.add('border-red-400');
+                resultDiv.classList.remove('border-blue-400');
+            }
+        }
+
+        // ====================================================================
+        // === EVENT HANDLERS ===
+        // ====================================================================
+
+        document.getElementById('addEngineerForm').addEventListener('submit', addEngineer);
+        document.getElementById('assignProjectForm').addEventListener('submit', assignProject);
+
+        // ... ساير توابع ...
+        // (توابع resetEngineerQuota، resetAllEngineersQuotas، showMonthlyReport، showEngineerDetails، renderMonthlyReport و window.printReport بايد در ادامه کد شما باشند)
+
+        // ====================================================================
+        // === ساير توابع (ناقص در ورودي شما، فرض مي‌شود که در ادامه فايل هستند) ===
+        // ====================================================================
+
+        // تابع نمايش جزئيات کارهاي ارجاع داده شده به يک مهندس (بايد اصلاح شود)
+        async function showEngineerDetails(engineerId, engineerName) {
+            
+            if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است.", 'error');
+                return;
+            }
+            
+            const modal = detailsModalRef;
+            const modalTitle = modalTitleRef;
+            const projectsList = projectsListRef;
+            const modalLoadingMessage = modalLoadingMessageRef;
+            
+            modal.classList.remove('hidden');
+            modalTitle.textContent = `جزئيات کارهاي ${engineerName}`;
+            projectsList.innerHTML = '';
+            modalLoadingMessage.classList.remove('hidden');
+            
+            try {
+                // جستجو در کالکشن پروژه‌ها بر اساس engineerId و userId
+                const q = query(PROJECTS_COLLECTION, 
+                    where("engineerId", "==", engineerId), 
+                    where("userId", "==", userId), // فيلتر امنيتي جديد
+                    // limit(50) // مي‌تواند براي محدود کردن نتايج اضافه شود
+                );
+
+                const querySnapshot = await getDocs(q);
+                
+                modalLoadingMessage.classList.add('hidden');
+                
+                if (querySnapshot.empty) {
+                    projectsList.innerHTML = '<p class="text-center text-gray-500 p-4 bg-gray-50 rounded-lg">هيچ کاري براي اين مهندس ثبت نشده است.</p>';
+                    return;
+                }
+                
+                let totalCost = 0;
+                let detailsHTML = '';
+                
+                querySnapshot.forEach(doc => {
+                    const project = doc.data();
+                    totalCost += project.cost || 0;
+                    
+                    detailsHTML += `
+                        <div class="p-3 border rounded-lg bg-white shadow-sm flex justify-between items-center text-sm">
+                            <div>
+                                <p class="font-bold text-gray-800">${project.jobType} (${formatCost(project.cost)})</p>
+                                <p class="text-gray-600 mt-1">متقاضي: ${project.clientName} | ارگان: ${project.organization}</p>
+                                <p class="text-xs text-gray-400 mt-1">تاريخ ارجاع: ${toJalali(project.assignedAt)}</p>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                projectsList.innerHTML = detailsHTML;
+                
+                // اضافه کردن مجموع در پايان ليست
+                projectsList.insertAdjacentHTML('beforeend', `
+                    <div class="p-3 mt-4 border rounded-lg bg-blue-50 border-blue-200 font-bold text-gray-800 flex justify-between">
+                        <span>مجموع هزينه کارهاي ارجاع شده:</span>
+                        <span>${formatCost(totalCost)}</span>
+                    </div>
+                `);
+
+            } catch (error) {
+                console.error("خطا در بارگذاري جزئيات پروژه: ", error);
+                modalLoadingMessage.classList.add('hidden');
+                projectsList.innerHTML = `<p class="text-center text-red-500 p-4 bg-red-50 rounded-lg">خطا در بارگذاري: ${error.message}</p>`;
+            }
+        }
+        window.showEngineerDetails = showEngineerDetails; // Expose to global scope
+        
+        // --- توابع تکميلي (مانند ريست سهميه و گزارش‌گيري) با فرض اينکه آنها نيز نياز به فيلد userId دارند ---
+
+        async function resetEngineerQuota(engineerId, engineerName, usedQuota, maxQuota) {
+            if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است.", 'error');
+                return;
+            }
+
+            const debt = Math.max(0, usedQuota - maxQuota);
+            const message = `آيا مطمئن هستيد که مي‌خواهيد سهميه ${engineerName} را تمديد کنيد؟ بدهي فعلي: ${formatCost(debt)}. سهميه مصرف شده (Used Quota) ريست نخواهد شد و فقط مبلغ تمديد به سهميه کل اضافه مي‌شود.`;
+
+            showConfirmationModal('تمديد سهميه مهندس', message, async (confirmed) => {
+                if (confirmed) {
+                    try {
+                        const engineerRef = doc(ENGINEER_COLLECTION, engineerId);
+                        
+                        // ريست کردن UsedQuota به صفر و تعيين MaxQuota جديد بر اساس پايه
+                        await updateDoc(engineerRef, {
+                            usedQuota: 0,
+                            maxQuota: RANK_QUOTAS[allEngineersMap[engineerId].rank],
+                            // اين عمليات فقط سهميه را به حالت اوليه برمي‌گرداند.
+                        });
+                        
+                        showMessage(`سهميه ${engineerName} با موفقيت تمديد و تسويه شد.`, 'success');
+
+                    } catch (error) {
+                        console.error("خطا در ريست سهميه: ", error);
+                        showMessage("خطا در ريست سهميه. لطفاً دوباره تلاش کنيد.", 'error');
+                    }
+                }
+            });
+        }
+        window.resetEngineerQuota = resetEngineerQuota;
+
+        async function resetAllEngineersQuotas() {
+            if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است.", 'error');
+                return;
+            }
+            
+            const message = `آيا مطمئن هستيد که مي‌خواهيد سهميه تمام مهندساني که بدهي دارند را تمديد و تسويه کنيد؟`;
+
+            showConfirmationModal('تمديد سهميه کلي', message, async (confirmed) => {
+                if (confirmed) {
+                    const batch = writeBatch(db);
+                    let resetCount = 0;
+                    
+                    Object.values(allEngineersMap).forEach(eng => {
+                        const remaining = eng.maxQuota - eng.usedQuota;
+                        if (remaining <= 0) { // فقط براي مهندساني که بدهي دارند يا سهميه‌شان صفر شده
+                             const engineerRef = doc(ENGINEER_COLLECTION, eng.id);
+                             batch.update(engineerRef, {
+                                usedQuota: 0,
+                                maxQuota: RANK_QUOTAS[eng.rank],
+                             });
+                             resetCount++;
+                        }
+                    });
+
+                    if (resetCount > 0) {
+                        try {
+                            await batch.commit();
+                            showMessage(`${resetCount} سهميه مهندس با موفقيت تمديد و تسويه شد.`, 'success');
+                        } catch (error) {
+                            console.error("خطا در اجراي تراکنش گروهي:", error);
+                            showMessage("خطا در ريست کلي. لطفاً دوباره تلاش کنيد.", 'error');
+                        }
+                    } else {
+                        showMessage("هيچ مهندسي نياز به ريست سهميه نداشت.", 'info');
+                    }
+                }
+            });
+        }
+        window.resetAllEngineersQuotas = resetAllEngineersQuotas;
+        
+        
+        // تابع توليد گزارش ماهيانه (نياز به پياده‌سازي کامل)
+        function showMonthlyReport() {
+             if (!isAuthReady || !userId) {
+                showMessage("خطا: احراز هويت انجام نشده است.", 'error');
+                return;
+            }
+            
+            // نمايش Modal
+            document.getElementById('printReportModal').classList.remove('hidden');
+            const reportArea = document.getElementById('printReportArea');
+            reportArea.innerHTML = '<div class="text-center p-8 text-blue-500">در حال محاسبه آمار ماهيانه...</div>';
+            
+            // توليد گزارش با استفاده از allProjects (که بر اساس userId فيلتر شده)
+            renderMonthlyReport(reportArea, allProjects);
+        }
+        window.showMonthlyReport = showMonthlyReport;
+        
+        // تابع رندر گزارش
+        function renderMonthlyReport(container, projects) {
+            // اين تابع نياز به پياده‌سازي logic تاريخ شمسي و فيلتر ماه جاري دارد
+            container.innerHTML = `<div class="p-4 bg-yellow-50 rounded-lg text-yellow-800">
+                گزارش ماهيانه: اين بخش نياز به پياده‌سازي کامل منطق فيلتر زماني و گروه‌بندي داده‌ها دارد.
+            </div>`;
+            
+            // --- ساده‌ترين حالت: نمايش تمام داده‌هاي کش شده ---
+            const groupedReport = projects.reduce((acc, project) => {
+                // اگر مي‌خواهيد گروه‌بندي بر اساس مهندس انجام دهيد:
+                const engineerName = project.engineerName;
+                if (!acc[engineerName]) {
+                    acc[engineerName] = { totalCost: 0, count: 0, projects: [] };
+                }
+                acc[engineerName].totalCost += project.cost;
+                acc[engineerName].count++;
+                acc[engineerName].projects.push(project);
+                return acc;
+            }, {});
+            
+            // تبديل گزارش گروه بندي شده به HTML
+            let reportHTML = `<h4 class="text-xl font-bold mb-4">آمار خلاصه (تمام دوره‌ها)</h4>`;
+            reportHTML += `<table class="report-table">
+                <thead>
+                    <tr>
+                        <th>نام مهندس</th>
+                        <th>تعداد کار</th>
+                        <th>مجموع هزينه (م.ت)</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+                
+            let grandTotalCost = 0;
+            let grandTotalCount = 0;
+
+            Object.entries(groupedReport).forEach(([name, data]) => {
+                grandTotalCost += data.totalCost;
+                grandTotalCount += data.count;
+                reportHTML += `
+                    <tr>
+                        <td>${name}</td>
+                        <td>${data.count}</td>
+                        <td>${formatCost(data.totalCost)}</td>
+                    </tr>`;
+            });
+
+            reportHTML += `
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td>مجموع کل:</td>
+                        <td>${grandTotalCount}</td>
+                        <td>${formatCost(grandTotalCost)}</td>
+                    </tr>
+                </tfoot>
+            </table>`;
+            
+            container.innerHTML = reportHTML;
+        }
+
+        // تابع چاپ
+        window.printReport = function() {
+            window.print();
+        };
+
+        // --- Utility Functions (ادامه توابعي که در ابتدا آمده بود) ---
+        
+        // Modal Open/Close Functions
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+        
+        // تابع نمايش و مخفي کردن ويوها
+        function showView(viewId) {
+            const views = ['addEngineerModal', 'assignProjectModal', 'dashboardView'];
+            views.forEach(id => {
+                const view = document.getElementById(id);
+                if (view) {
+                    if (id === viewId) {
+                        view.classList.remove('hidden-view');
+                    } else {
+                        view.classList.add('hidden-view');
+                    }
+                }
+            });
+
+            if (viewId === 'dashboardView') {
+                document.getElementById('dashboardView').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        
+        window.closeModal = closeModal;
+        window.showView = showView; // Expose to global scope for button clicks
+
+        // تابع فرمت اعداد به واحد ميليون تومان
+        function formatCost(cost) {
+            if (cost === undefined || cost === null) return 'N/A';
+            return parseFloat(cost).toLocaleString('fa') + ' م.ت';
+        }
+
+        // تابع تبديل تاريخ ميلادي فايربيس به شمسي
+        function toJalali(timestamp) {
+            if (!timestamp || typeof timestamp.toDate !== 'function') return 'نامشخص';
+            const date = timestamp.toDate();
+            return new Intl.DateTimeFormat('fa-IR', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric'
+            }).format(date);
+        }
+
+        // --- Custom Confirmation Modal Logic (Unchanged) ---
+        let confirmCallback = null;
+
+        function showConfirmationModal(title, message, callback) {
+            const modal = document.getElementById('confirmationModal');
+            const titleEl = document.getElementById('confirmModalTitle');
+            const messageEl = document.getElementById('confirmModalMessage');
+            const acceptBtn = document.getElementById('confirmAcceptBtn');
+            
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            modal.classList.remove('hidden');
+            
+            confirmCallback = callback;
+
+            // This clone/replace technique prevents multiple event listeners from stacking up
+            const newAcceptBtn = acceptBtn.cloneNode(true);
+            acceptBtn.parentNode.replaceChild(newAcceptBtn, acceptBtn);
+
+            newAcceptBtn.addEventListener('click', () => {
+                closeModal('confirmationModal');
+                if (confirmCallback) {
+                    confirmCallback(true);
+                }
+            });
+
+            document.getElementById('confirmCancelBtn').onclick = () => {
+                closeModal('confirmationModal');
+            };
+        }
+        window.showConfirmationModal = showConfirmationModal;
+
+
+        // تابع نمايش پيام به کاربر (Unchanged)
+        function showMessage(message, type = 'success') {
+            const box = document.getElementById('messageBox');
+            box.textContent = message;
+
+            let bgColor, borderColor;
+            switch (type) {
+                case 'success':
+                    bgColor = 'bg-green-100 text-green-800';
+                    borderColor = 'border-green-600';
+                    break;
+                case 'error':
+                    bgColor = 'bg-red-100 text-red-800';
+                    borderColor = 'border-red-600';
+                    break;
+                case 'info':
+                default:
+                    bgColor = 'bg-blue-100 text-blue-800';
+                    borderColor = 'border-blue-600';
+                    break;
+            }
+
+            box.className = `fixed top-4 left-1/2 transform -translate-x-1/2 p-4 rounded-lg z-50 transition-all duration-300 shadow-xl w-full max-w-sm text-center border-r-8 ${bgColor} ${borderColor}`;
+            box.classList.remove('hidden');
+
+            setTimeout(() => {
+                box.classList.add('hidden');
+            }, 5000);
+        }
+
+        // تابع بررسي وضعيت سهميه کلي (آيا همه پر هستند؟)
+        function checkGlobalQuotaStatus(engineers) {
+            if (engineers.length === 0) return false;
+            // اگر حتي يک مهندس سهميه باقيمانده مثبت داشته باشد، سيستم پر نيست.
+            const hasFreeQuota = engineers.some(eng => (eng.maxQuota - eng.usedQuota) > 0.1); // Small buffer for float math
+            return !hasFreeQuota; // اگر هيچکس سهميه آزاد ندارد، دکمه بايد ظاهر شود (True)
+        }
+
+
+        // رندر کردن ليست مهندسان (Dashboard)
+        function renderEngineers(engineers) {
+            const listContainer = document.getElementById('engineerList');
+            const loadingMessage = document.getElementById('loadingMessage'); 
+            const newQuotaButtonContainer = document.getElementById('newQuotaButtonContainer');
+
+            listContainer.innerHTML = '';
+            if (loadingMessage) {
+                loadingMessage.classList.add('hidden');
+            }
+
+            if (engineers.length === 0) {
+                listContainer.innerHTML = '<p class="text-center text-gray-500 p-4 bg-gray-50 rounded-lg">هنوز هيچ مهندسي ثبت نشده است.</p>';
+                newQuotaButtonContainer.classList.add('hidden'); 
+                return;
+            }
+
+            // مرتب سازي: پايه بالاتر + بيشترين سهميه باقيمانده (کمترين بدهي)
+            const sortedEngineers = engineers.sort((a, b) => {
+                const rankA = RANK_PRIORITY[a.rank] || 0;
+                const rankB = RANK_PRIORITY[b.rank] || 0;
+                if (rankB !== rankA) {
+                    return rankB - rankA; // Higher rank first
+                }
+                const remainingA = a.maxQuota - a.usedQuota;
+                const remainingB = b.maxQuota - b.usedQuota;
+                return remainingB - remainingA; // Higher remaining first (least debt)
+            });
+
+
+            sortedEngineers.forEach(eng => {
+                const remaining = eng.maxQuota - eng.usedQuota;
+                const debt = Math.max(0, -remaining); 
+                // براي نمايش بصري، درصد را بر اساس سهميه اوليه محاسبه مي‌کنيم
+                const percentageUsed = (eng.usedQuota / eng.maxQuota) * 100;
+
+                let quotaStatusHTML;
+                let progressColor;
+                
+                if (remaining >= 0) {
+                    quotaStatusHTML = `<p class="text-md font-semibold ${remaining > 0 ? 'text-green-700' : 'text-yellow-700'} mt-1">
+                                            سهميه باقيمانده: ${formatCost(remaining)}
+                                          </p>`;
+                    progressColor = percentageUsed < 95 ? 'bg-green-500' : 'bg-yellow-500';
+                } else {
+                    quotaStatusHTML = `<p class="text-md font-bold text-red-700 mt-1">
+                                            بدهي سهميه (مازاد): ${formatCost(debt)}
+                                          </p>`;
+                    progressColor = 'bg-red-600';
+                }
+
+                // Logic for Quota Reset Button
+                let resetButtonHTML = `
+                    <button onclick="event.stopPropagation(); resetEngineerQuota('${eng.id}', '${eng.fullName.replace(/'/g, "\\'")}', ${eng.usedQuota}, ${eng.maxQuota})" 
+                        class="bg-blue-500 text-white px-3 py-1 text-xs rounded-lg hover:bg-blue-600 transition duration-150 mt-2 ${debt > 0 ? 'bg-red-700 hover:bg-red-800' : ''}">
+                        ${debt > 0 ? 'تمديد و تسويه بدهي' : 'تمديد سهميه'}
+                    </button>
+                `;
+
+                // ساخت کارت مهندس با قابليت کليک براي جزئيات
+                const engineerCard = `
+                    <div class="p-4 border rounded-xl bg-gray-50 flex items-start transition hover:shadow-lg hover:border-blue-500">
+                        <div onclick="showEngineerDetails('${eng.id}', '${eng.fullName.replace(/'/g, "\\'")}')" class="flex-grow cursor-pointer">
+                            <p class="font-bold text-lg text-blue-900">${eng.fullName} (<span class="text-sm font-normal">${eng.rank}</span>)</p>
+                            <div class="flex flex-wrap text-sm text-gray-600 mt-1 space-x-4 space-x-reverse">
+                                <span class="font-medium">سهميه کل: ${formatCost(eng.maxQuota)}</span>
+                                <span>مصرف شده: ${formatCost(eng.usedQuota)}</span>
+                            </div>
+                            ${quotaStatusHTML}
+                        </div>
+
+                        <div class="w-1/3 min-w-[120px] mr-4 flex flex-col items-end">
+                            <div class="h-2.5 bg-gray-200 rounded-full w-full">
+                                <div class="progress-bar-fill h-2.5 rounded-full ${progressColor}" style="width: ${Math.min(100, percentageUsed).toFixed(0)}%;"></div>
+                            </div>
+                            <p class="text-xs text-right mt-1 text-gray-500">${Math.min(100, percentageUsed).toFixed(0)}% مصرف</p>
+                            <div class="reset-button-container">
+                                ${resetButtonHTML}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                listContainer.insertAdjacentHTML('beforeend', engineerCard);
+            });
+            
+            // نمايش/عدم نمايش دکمه سهميه کلي
+            const isGlobalQuotaExceeded = checkGlobalQuotaStatus(engineers);
+            if (newQuotaButtonContainer) {
+                if (isGlobalQuotaExceeded) {
+                    newQuotaButtonContainer.classList.remove('hidden');
+                } else {
+                    newQuotaButtonContainer.classList.add('hidden');
                 }
             }
+        }
+        
+        // --- Dynamic Form Rendering (for Assignment View) ---
+        
+        function renderDynamicInputs(jobType) {
+            const container = document.getElementById('dynamicInputs');
+            container.innerHTML = ''; 
             
-            if (count > 0) {
-                 await batch.commit();
-                 showMessage(`${count} بدهي مهندس با موفقيت تسويه و سهميه جديد باز شد.`, 'success');
-            } else {
-                 showMessage('بدهي براي تسويه وجود نداشت.', 'info');
+            const jobDetail = JOB_DETAILS[jobType];
+            
+            if (!jobDetail) {
+                 container.innerHTML = '<p class="text-sm text-gray-500 text-center">لطفاً نوع کار را انتخاب کنيد تا جزئيات پروژه مشخص شود.</p>';
+                 return;
             }
-            
-        } catch (error) {
-             console.error("خطا در تسويه دسته‌اي سهميه‌ها: ", error);
-             showMessage('خطا در تسويه دسته‌اي. عمليات لغو شد.', 'error');
-        }
-    }
-    
-    
-    // ====================================================================
-    // === MODAL & REPORTING FUNCTIONS ===
-    // ====================================================================
 
-    window.showConfirmation = function(action, id = null, name = null) {
-        // کنترل دسترسي حتي براي نمايش Modal تسويه
-        if (!isCurrentUserAdmin() && (action === 'resetQuota' || action === 'resetAllQuotas')) {
-             showMessage('شما دسترسي ادمين براي اين اقدام را نداريد.', 'error');
-             return;
+            // 1. Add Area Input if required
+            if (jobDetail.isAreaRequired) {
+                const areaInputHTML = `
+                    <div class="area-input">
+                        <label for="projectArea" class="block text-sm font-medium text-gray-700 mb-1">${jobDetail.label}</label>
+                        <input type="number" step="1" min="1" id="projectArea" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="مثلاً: 120">
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', areaInputHTML);
+            }
+
+            // 2. Add Organization Dropdown ONLY if it's 'انتخاب ارگان' (i.e., نقشه يو تي ام)
+            let relatedOrganization = jobDetail.organization;
+            if (relatedOrganization === 'انتخاب ارگان') {
+                let optionsHtml = UTM_ORGANIZATIONS.map(org => `<option value="${org}">${org}</option>`).join('');
+                const organizationDropdown = `
+                    <div class="organization-select">
+                        <label for="relatedOrganization" class="block text-sm font-medium text-gray-700 mb-1">ارگان مربوطه:</label>
+                        <select id="relatedOrganization" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                            <option value="" disabled selected>انتخاب ارگان...</option>
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', organizationDropdown);
+            } else if (relatedOrganization) {
+                const fixedOrganizationInfo = `
+                    <div class="p-2 bg-blue-50 border-r-4 border-blue-400 rounded-md text-sm text-gray-700">
+                        <p class="font-semibold">ارگان مربوطه: ${relatedOrganization}</p>
+                        <p class="text-xs">اين نوع نقشه به صورت خودکار به ${relatedOrganization} ارجاع داده مي‌شود.</p>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', fixedOrganizationInfo);
+            }
+
+
+            // 3. Always add Manual Cost Input (Required)
+            const manualCostHTML = `
+                <div class="manual-cost-input">
+                    <label for="manualCost" class="block text-sm font-medium text-gray-700 mb-1">هزينه بصورت دستي (ميليون تومان):</label>
+                    <input type="number" step="0.5" min="0.5" id="manualCost" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="هزينه نهايي پروژه را وارد کنيد (مثلاً: 2.5)">
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', manualCostHTML);
+            
+            const manualCostInput = document.getElementById('manualCost');
+            const defaultCost = PROJECT_COSTS[jobType];
+            if (defaultCost !== undefined && manualCostInput) {
+                manualCostInput.value = defaultCost;
+            }
         }
+
+        // --- Event Listeners for Dynamic Inputs ---
         
-        const confirmModalTitle = document.getElementById('confirmModalTitle');
-        const confirmModalMessage = document.getElementById('confirmModalMessage');
-        const confirmAcceptBtn = document.getElementById('confirmAcceptBtn');
-        
-        openModal('confirmationModal');
-        
-        if (action === 'resetQuota') {
-            confirmModalTitle.textContent = `تسويه بدهي مهندس ${name}`;
-            confirmModalMessage.innerHTML = `آيا مطمئن هستيد که بدهي مهندس **${name}** (با مبلغ ${formatCost(allEngineersMap[id]?.debt || 0)}) تسويه شده و سهميه او صفر شود؟`;
-            confirmAcceptBtn.onclick = () => resetEngineerQuota(id, name);
-            confirmAcceptBtn.textContent = 'تسويه کن';
-        } else if (action === 'resetAllQuotas') {
-            confirmModalTitle.textContent = 'تسويه دسته‌اي سهميه‌ها';
-            confirmModalMessage.textContent = 'آيا مطمئن هستيد که بدهي تمام مهندساني که بدهکار هستند، تسويه شده و سهميه آن‌ها صفر شود؟ اين عمليات برگشت‌ناپذير است.';
-            confirmAcceptBtn.onclick = resetAllQuotas;
-            confirmAcceptBtn.textContent = 'تأييد تسويه عمومي';
-        }
-    }
-    
-    window.showEngineerProjects = async function(engineerId, engineerName) {
-        openModal('detailsModal');
-        modalTitle
+        document.getElementById('jobType').addEventListener('change', (e) => {
+            const jobType = e.target.value;
+            renderDynamicInputs(jobType); 
+            document.getElementById('assignmentResult').classList.add('hidden'); // Reset assignment result
+        });
+
+    </script>
+</body>
+</html>
