@@ -270,18 +270,40 @@
         import { initializeApp, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, doc, updateDoc, onSnapshot, runTransaction, query, where, getDocs, increment, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-{
-  apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
-  authDomain: "database-erjakar.firebaseapp.com",
-  projectId: "database-erjakar",
-  storageBucket: "database-erjakar.firebasestorage.app",
-  messagingSenderId: "1056379437698",
-  appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b",
-  measurementId: "G-NS5ZPEFXD8"
+// CONFIG OBJECT
+        
+const firebaseConfig = { // نام‌گذاری برای وضوح بهتر
+          
+apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
+          
+authDomain: "database-erjakar.firebaseapp.com",
+          
+projectId: "database-erjakar",
+          
+storageBucket: "database-erjakar.firebasestorage.app",
+          
+messagingSenderId: "1056379437698",
+          
+appId: "1:1056379437698:web:2a6bffc8ea0f1949436a9b",
+          
+measurementId: "G-NS5ZPEFXD8"
+        
 };
+        // تابع initializeApp باید فراخوانی شود!
+        
+app = initializeApp(firebaseConfig);
+        
+db = getFirestore(app);
+        
+auth = getAuth(app);
 
-        // تنظيمات سراسري فايربيس
-        setLogLevel('Debug');
+
+        
+// تنظيمات سراسري فايربيس
+        
+setLogLevel('Debug');
+
+
 
         let app, db, auth, userId = null;
         let isAuthReady = false;
