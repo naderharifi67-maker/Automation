@@ -72,7 +72,7 @@
 
         /* Print styles */
         @media print {
-            .print\:hidden, .modal-overlay:not(#reportModal), .card, .gradient-bg, .footer-buttons, header, .flex-wrap, .edit-mode-indicator {
+            .print\:hidden, .modal-overlay:not(#reportModal), .card, .gradient-bg, .footer-buttons, header, .flex-wrap {
                 display: none !important;
             }
             body, html {
@@ -191,18 +191,7 @@
 
 
             <div id="dashboardView" class="bg-white p-6 rounded-xl card hidden-view">
-                <h2 id="dashboardTitle" class="text-2xl font-semibold border-b pb-3 mb-4 text-gray-800">داشبورد سهميه مهندسين (ميليون تومان)</h2>
-
-                <div id="engineerManagementButtons" class="mb-4 pt-2 border-b pb-4 flex justify-between items-center print:hidden">
-                    <button onclick="showEngineersForEdit()" class="bg-indigo-600 text-white p-3 text-sm rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md flex items-center font-bold">
-                        تغییر مشخصات مهندس ✏️
-                    </button>
-                </div>
-                
-                <div id="editModeIndicator" class="edit-mode-indicator p-3 mb-4 rounded-lg bg-yellow-100 text-yellow-800 font-semibold hidden print:hidden">
-                    شما در حالت **ویرایش مشخصات مهندسین** هستید. روی آیکون مداد کلیک کنید.
-                    <button onclick="showView('dashboardView')" class="mr-4 text-blue-600 hover:text-blue-800 underline">خروج از حالت ویرایش</button>
-                </div>
+                <h2 class="text-2xl font-semibold border-b pb-3 mb-4 text-gray-800">داشبورد سهميه مهندسين (ميليون تومان)</h2>
 
                 <div class="text-center p-4 text-gray-500" id="loadingMessage">در حال بارگذاري اطلاعات مهندسان...</div>
                 <div id="engineerList" class="space-y-4">
@@ -333,6 +322,7 @@
         ];
 
         // CONFIG OBJECT (تنظيمات فايربيس شما)
+        // **توجه:** این تنظیمات مربوط به یک پروژه نمونه است. اگر پروژه شما فعال است، از تنظیمات خود استفاده کنید.
         const firebaseConfig = { 
             apiKey: "AIzaSyChV9mCptF4qybDn_yaOhmSz-KI3LhtDEQ",
             authDomain: "database-erjakar.firebaseapp.com",
@@ -348,7 +338,6 @@
         let currentAuthUser = null;
         let userId = null;
         let isAuthReady = false;
-        let editMode = false; // حالت جدید: آیا داشبورد در حالت ویرایش است؟
         
         // --- Static Data ---
         const PROJECT_COSTS = {
@@ -387,7 +376,6 @@
 
         let ENGINEER_COLLECTION, PROJECTS_COLLECTION;
         let allEngineersMap = {};
-        let allEngineersArray = []; // برای استفاده در رندرینگ
         let allProjects = [];
 
         let detailsModalRef, modalTitleRef, projectsListRef, modalLoadingMessageRef;
@@ -402,14 +390,16 @@
         }
 
         function handleAccessControl() {
-            const adminButtons = document.querySelectorAll('.print\\:hidden button[onclick], #newQuotaButtonContainer, #engineerManagementButtons button');
+            const adminButtons = document.querySelectorAll('.print\\:hidden button[onclick], #newQuotaButtonContainer');
             
             const isAdmin = isCurrentUserAdmin();
 
             adminButtons.forEach(btn => {
-                const isGeneralButton = ['dashboardView', 'showMonthlyReport'].includes(btn.getAttribute('onclick').split("'")[1]);
-                
-                if (isAdmin || isGeneralButton) {
+                const isReportButton = btn.getAttribute('onclick') === "showMonthlyReport()";
+                const isDashboardButton = btn.getAttribute('onclick') === "showView('dashboardView')";
+
+                // همه می‌توانند داشبورد و گزارش را ببینند، اما بقیه فقط ادمین‌ها
+                if (isAdmin || isDashboardButton || isReportButton) {
                     btn.classList.remove('hidden');
                 } else {
                     btn.classList.add('hidden');
@@ -434,6 +424,7 @@
 
         function formatCost(cost) {
             if (typeof cost !== 'number' || isNaN(cost)) return '0';
+            // نمایش عدد با یک رقم اعشار (برای دقت بیشتر) و سپس فرمت فارسی
             return new Intl.NumberFormat('fa-IR').format(cost.toFixed(1)) + ' م.ت';
         }
 
@@ -479,19 +470,10 @@
             if (viewId === 'assignProjectModal') {
                 renderDynamicInputs(document.getElementById('jobType').value);
             }
-            
-            // خروج از حالت ویرایش هنگام تعویض ویو
-            if (viewId !== 'dashboardView') {
-                editMode = false;
-            }
-            // رندر مجدد داشبورد برای بازگشت به حالت عادی
-            if (viewId === 'dashboardView') {
-                 renderEngineers(allEngineersArray);
-            }
 
             closeModal('detailsModal');
             closeModal('confirmationModal');
-            closeModal('reportModal'); 
+            closeModal('reportModal'); // اطمینان از بسته شدن مدال‌ها
             closeModal('editEngineerModal');
         }
         
@@ -577,6 +559,7 @@
                  orgDiv.appendChild(orgSelect);
                  container.appendChild(orgDiv);
             } else {
+                 // برای نقشه کروکي و تک خطي که ارگان مشخص است
                  selectedOrganization = details.organization;
             }
             
@@ -706,7 +689,6 @@
                     allEngineersMap[doc.id] = { id: doc.id, ...data };
                     engineers.push({ id: doc.id, ...data });
                 });
-                allEngineersArray = engineers; // ذخیره برای استفاده در حالت ویرایش
                 renderEngineers(engineers);
             }, (error) => {
                 console.error("Error listening to engineers collection: ", error);
@@ -721,6 +703,7 @@
                 querySnapshot.forEach((doc) => {
                     allProjects.push({ id: doc.id, ...doc.data() });
                 });
+                // showMessage("ليست پروژه‌ها به روز شد.", 'info'); 
             }, (error) => {
                 console.error("Error listening to projects collection: ", error);
                 showMessage("خطا در بارگذاري ليست پروژه‌ها: " + error.message, 'error');
@@ -736,30 +719,21 @@
                 return;
             }
 
-            // مرتب سازی بر اساس سهمیه باقیمانده برای حالت عادی
-            if (!editMode) {
-                engineers.sort((a, b) => {
-                    const aRemaining = a.quota - a.usedQuota;
-                    const bRemaining = b.quota - b.usedQuota;
-                    if (aRemaining !== bRemaining) return aRemaining - bRemaining;
-                    const aPriority = RANK_PRIORITY[a.rank] || 0;
-                    const bPriority = RANK_PRIORITY[b.rank] || 0;
-                    return bPriority - aPriority; 
-                });
-            } else {
-                 // در حالت ویرایش، بر اساس نام مرتب می‌شود
-                 engineers.sort((a, b) => a.name.localeCompare(b.name, 'fa'));
-            }
-            
-            // نمایش یا پنهان کردن پیام حالت ویرایش
-            const indicator = document.getElementById('editModeIndicator');
-            if (editMode && isCurrentUserAdmin()) {
-                indicator.classList.remove('hidden');
-                document.getElementById('dashboardTitle').textContent = "مدیریت و ویرایش مشخصات مهندسین";
-            } else {
-                indicator.classList.add('hidden');
-                document.getElementById('dashboardTitle').textContent = "داشبورد سهميه مهندسين (ميليون تومان)";
-            }
+            // مرتب سازی بر اساس اولویت سهمیه باقیمانده (کمترین سهمیه باقیمانده بالاترین اولویت را دارد)
+            engineers.sort((a, b) => {
+                const aRemaining = a.quota - a.usedQuota;
+                const bRemaining = b.quota - b.usedQuota;
+                
+                // 1. اولویت بر اساس سهمیه باقیمانده (صعودی)
+                if (aRemaining !== bRemaining) {
+                    return aRemaining - bRemaining;
+                }
+                
+                // 2. اولویت ثانویه بر اساس پایه (پایه بالاتر اولویت بیشتری دارد)
+                const aPriority = RANK_PRIORITY[a.rank] || 0;
+                const bPriority = RANK_PRIORITY[b.rank] || 0;
+                return bPriority - aPriority; 
+            });
 
 
             let html = '';
@@ -770,7 +744,8 @@
 
                 let borderColorClass = 'border-blue-500';
                 let progressColorClass = 'bg-blue-500';
-                
+                let statusText = 'سهمیه عادی'; // این متغیر در حال حاضر استفاده نمی‌شود اما برای توسعه‌های بعدی مناسب است.
+
                 if (remainingQuota <= 0) {
                     borderColorClass = 'border-red-600';
                     progressColorClass = 'bg-red-600';
@@ -782,11 +757,11 @@
                 html += `
                     <div class="p-4 border-r-4 ${borderColorClass} bg-white card flex justify-between items-center transition duration-200 hover:shadow-lg">
                         <div class="flex-grow">
-                            <div class="flex items-center justify-start">
+                            <div class="flex items-center justify-between">
                                 <h3 class="text-xl font-bold text-gray-900">${eng.name} (${eng.rank})</h3>
                                 
-                                ${editMode && isCurrentUserAdmin() ? `
-                                    <button onclick="openEditEngineerModal('${eng.id}')" class="text-indigo-500 hover:text-indigo-700 mr-4 p-2 rounded-full hover:bg-gray-100 print:hidden" title="ویرایش و حذف مهندس">
+                                ${isCurrentUserAdmin() ? `
+                                    <button onclick="openEditEngineerModal('${eng.id}')" class="text-blue-500 hover:text-blue-700 ml-4 p-2 rounded-full hover:bg-gray-100 print:hidden" title="مدیریت مهندس">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5l4 4L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                     </button>
                                 ` : ''}
@@ -815,17 +790,6 @@
             });
 
             listEl.innerHTML = html;
-        }
-        
-        // تابع جدید: فعال کردن حالت ویرایش
-        window.showEngineersForEdit = function() {
-            if (!isCurrentUserAdmin()) {
-                showMessage('شما دسترسي ادمين براي انجام اين عمليات را نداريد.', 'error');
-                return;
-            }
-            editMode = true;
-            showView('dashboardView'); // نمایش داشبورد در حالت ویرایش
-            // renderEngineers به طور خودکار به دلیل تغییر editMode و رفرش شدن ویو، لیست را با دکمه‌های ویرایش رندر می‌کند.
         }
 
 
@@ -871,10 +835,12 @@
             try {
                 const engineerRef = doc(db, 'engineers', engineerId);
                 
+                // اگر رنک تغییر کرده باشد، سهمیه پایه نیز باید به‌روز شود
                 const currentEngineer = allEngineersMap[engineerId];
                 const newBaseQuota = RANK_QUOTAS[newRank];
                 let updateData = { name: newName, rank: newRank };
 
+                // اگر quota تغییر کند، usedQuota حفظ می‌شود و تنها سهمیه پایه تغییر می‌کند.
                 if (currentEngineer.quota !== newBaseQuota) {
                      updateData.quota = newBaseQuota;
                 }
@@ -896,6 +862,7 @@
 
             if (!engineerId) return;
 
+            // بستن مدال ویرایش و باز کردن مدال تأیید
             closeModal('editEngineerModal');
             openModal('confirmationModal');
             
@@ -906,6 +873,7 @@
                 <p class="text-sm text-gray-500 mt-2">اين عمليات قابل بازگشت نيست.</p>
             `;
             
+            // تنظیم اکشن دکمه تایید
             const confirmBtn = document.getElementById('confirmAcceptBtn');
             confirmBtn.onclick = () => deleteEngineerFinal(engineerId);
             confirmBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700'); 
@@ -938,8 +906,6 @@
 
                 await batch.commit();
 
-                // پس از حذف، از حالت ویرایش خارج شده و به نمای عادی بازگردانده می‌شود
-                editMode = false; 
                 showMessage('مهندس و تمام پروژه‌های ايشان با موفقيت حذف شدند. 🗑️', 'success');
             } catch (error) {
                 console.error("خطا در حذف مهندس:", error);
@@ -1013,10 +979,15 @@
                     return showMessage('خطا: هيچ مهندسي براي ارجاع کار وجود ندارد.', 'error');
                 }
 
+                // فیلتر و مرتب‌سازی بر اساس سهمیه باقیمانده
                 const eligibleEngineers = engineersArray
-                    .filter(eng => eng.quota >= (eng.usedQuota + cost) || (eng.quota - eng.usedQuota) > -5)
+                    .filter(eng => eng.quota >= (eng.usedQuota + cost) || (eng.quota - eng.usedQuota) > -5) // فقط مهندسانی که سهمیه‌شان مثبت است یا بدهی کمی دارند (-5 م.ت)
                     .sort((a, b) => {
-                        if (a.usedQuota !== b.usedQuota) return a.usedQuota - b.usedQuota;
+                        // اولویت اول: کمترین سهمیه استفاده شده
+                        if (a.usedQuota !== b.usedQuota) {
+                            return a.usedQuota - b.usedQuota;
+                        }
+                        // اولویت دوم: پایه بالاتر (برای شکستن تساوی)
                         const aPriority = RANK_PRIORITY[a.rank] || 0;
                         const bPriority = RANK_PRIORITY[b.rank] || 0;
                         return bPriority - aPriority;
@@ -1038,6 +1009,7 @@
                         throw "مهندس مورد نظر يافت نشد.";
                     }
 
+                    // به‌روزرسانی usedQuota با استفاده از increment
                     transaction.update(engineerRef, {
                         usedQuota: increment(cost)
                     });
@@ -1139,7 +1111,7 @@
             openModal('detailsModal');
 
             if (!isAuthReady || !allProjects || !allEngineersMap[engineerId]) {
-                return; 
+                return; // داده‌ها هنوز آماده نیستند، پیام لودینگ کافی است.
             }
 
             const engineerProjects = allProjects
@@ -1192,15 +1164,18 @@
             const startOfMonth = new Date(currentYear, currentMonth, 1);
             const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
 
+            // فیلتر کردن پروژه‌های ماه جاری
             const monthlyProjects = allProjects.filter(p => {
                 const projectDate = p.assignedAt ? new Date(p.assignedAt.toMillis()) : null;
                 return projectDate && projectDate >= startOfMonth && projectDate <= endOfMonth;
             });
             
+            // عنوان گزارش
             const farsiMonth = new Date(currentYear, currentMonth, 1).toLocaleDateString('fa-IR', { year: 'numeric', month: 'long' });
             document.getElementById('reportModalTitle').textContent = `گزارش ماهيانه فعاليت و سهميه - ${farsiMonth}`;
 
 
+            // --- 1. خلاصه پروژه‌های ماه جاری ---
             const totalCount = monthlyProjects.length;
             const totalCost = monthlyProjects.reduce((sum, p) => sum + p.cost, 0);
 
@@ -1208,6 +1183,7 @@
             document.getElementById('totalProjectsCost').textContent = `مجموع هزینه‌ها: ${formatCost(totalCost)}`;
 
 
+            // --- 2. جزئیات پروژه‌ها ---
             const monthlyListEl = document.getElementById('monthlyProjectsList');
             monthlyListEl.innerHTML = '';
             
@@ -1233,12 +1209,13 @@
                 monthlyListEl.innerHTML = '<p class="text-center text-gray-400 p-4">در اين ماه پروژه‌اي ثبت نشده است.</p>';
             }
 
+            // --- 3. وضعیت سهمیه مهندسین ---
             const quotaSummaryEl = document.getElementById('engineerQuotaSummary');
             quotaSummaryEl.innerHTML = '';
             
             let summaryHtml = '';
             Object.values(allEngineersMap)
-                .sort((a, b) => b.quota - a.quota) 
+                .sort((a, b) => b.quota - a.quota) // مرتب‌سازی بر اساس سهمیه کل (نزولی)
                 .forEach(eng => {
                     const remainingQuota = eng.quota - eng.usedQuota;
                     const usedPercent = (eng.usedQuota / eng.quota) * 100;
